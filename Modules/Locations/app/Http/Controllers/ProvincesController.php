@@ -3,7 +3,6 @@
 namespace Modules\Locations\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use Modules\Addresses\Models\Address;
 use Modules\Locations\Http\Requests\ProvinceStoreRequest;
 use Modules\Locations\Http\Requests\ProvinceUpdateRequest;
 use Modules\Locations\Models\Province;
@@ -77,13 +76,7 @@ class ProvincesController extends Controller
 
         $validated = $request->validated();
         $province = Province::findOrFail($id);
-        $usedInAddress = Address::where('province_id', $province->id)->exists();
-        if ($usedInAddress) {
-            return response()->json([
-                'success' => false,
-                'message' => 'این استان در آدرس کاربران استفاده شده و قابل ویرایش نیست.',
-            ], 422);
-        }
+       
 
         $province->update($validated);
         $notifications->create(
@@ -105,13 +98,7 @@ class ProvincesController extends Controller
     public function destroy($id, NotificationService $notifications)
     {
         $province = Province::findOrFail($id);
-        $usedInAddress = Address::where('province_id', $province->id)->exists();
-        if ($usedInAddress) {
-            return response()->json([
-                'success' => false,
-                'message' => 'این استان در آدرس کاربران استفاده شده و قابل حذف نیست.',
-            ], 422);
-        }
+
         $notifications->create(
             "حذف استان",
             " یک استان   {$province->name}از سیستم حذف  شد",

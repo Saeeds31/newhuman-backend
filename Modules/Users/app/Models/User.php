@@ -6,7 +6,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
-use Modules\Addresses\Models\Address;
 use Modules\Wallet\Models\Wallet;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Cart\Models\Cart;
@@ -35,32 +34,22 @@ class User extends Authenticatable
         'birth_date' => 'date',
     ];
 
-    /**
-     * Get all addresses for the user.
-     */
-    public function getDisplayName($addressReceiverName = null): string
+   
+    public function getDisplayName(): string
     {
         if (!empty($this->full_name)) {
             return $this->full_name;
         }
 
-        if (!empty($addressReceiverName)) {
-            return $addressReceiverName;
-        }
+       
         return 'کاربر';
     }
-    public function addresses()
-    {
-        return $this->hasMany(Address::class);
-    }
+    
     public function roles()
     {
         return $this->belongsToMany(Role::class);
     }
-    public function cartItems()
-    {
-        return $this->hasMany(Cart::class);
-    }
+   
     public function wallet()
     {
         return $this->hasOne(Wallet::class);
@@ -84,7 +73,6 @@ class User extends Authenticatable
     {
         return [
             'total_users'     => self::count(),
-            'with_addresses'  => self::has('addresses')->count(),
             'with_wallet'     => self::has('wallet')->count(),
             'without_wallet'  => self::doesntHave('wallet')->count(),
             'today_registered' => self::whereDate('created_at', today())->count(),

@@ -20,8 +20,6 @@ class CategoryStoreRequest extends FormRequest
             'meta_description' => ['nullable', 'string', 'max:255'],
             'description'      => ['nullable', 'string'],
             'parent_id'        => ['nullable', 'exists:categories,id'],
-            'show_in_home'       => ['nullable', 'boolean'],
-            'show_products_in_home'       => ['nullable', 'boolean'],
 
         ];
     }

@@ -14,14 +14,13 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('address_id')->constrained('addresses')->cascadeOnDelete();
-            $table->foreignId('shipping_id')->constrained('shippings')->cascadeOnDelete()->nullable();
             $table->bigInteger('subtotal');
             $table->bigInteger('discount_amount')->default(0);
-            $table->bigInteger('shipping_cost')->default(0);
             $table->bigInteger('total');
             $table->string('payment_method')->nullable();
             $table->string('payment_status')->default('pending');
+            $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
+            $table->bigInteger('price');
             $table->string('status')->default('pending'); // pending, processing, shipped, completed, canceled
             $table->timestamps();
         });

@@ -61,9 +61,11 @@ class UsersController extends Controller
     }
     public function index(Request $request)
     {
-        $query = User::with(['roles', 'addresses', 'wallet']);
+        $query = User::with(['roles', 'wallet'])
+            ->whereHas('roles', function ($q) {
+                $q->where('slug', 'customer');
+            });
 
-        // اگر پارامتر search ارسال شده باشد
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('full_name', 'like', "%{$search}%")
@@ -78,7 +80,7 @@ class UsersController extends Controller
     // لیست مدیران
     public function managerIndex(Request $request)
     {
-        $query = User::with(['roles', 'addresses', 'wallet']);
+        $query = User::with(['roles',  'wallet']);
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('full_name', 'like', "%{$search}%")
@@ -107,13 +109,13 @@ class UsersController extends Controller
             'balance' =>  0,
         ]);
         $user->roles()->sync([$customerRoleId]);
-        return response()->json($user->load(['roles', 'addresses', 'wallet']), 201);
+        return response()->json($user->load(['roles', 'wallet']), 201);
     }
 
     // نمایش یک کاربر
     public function show(User $user)
     {
-        return response()->json($user->load(['roles', 'addresses', 'wallet']));
+        return response()->json($user->load(['roles',  'wallet']));
     }
 
     // ویرایش کاربر
@@ -129,7 +131,7 @@ class UsersController extends Controller
             unset($data['password']);
         }
         $user->update($data);
-        return response()->json($user->load(['roles', 'addresses', 'wallet']));
+        return response()->json($user->load(['roles',  'wallet']));
     }
 
     // حذف کاربر

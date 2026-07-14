@@ -2,121 +2,95 @@
 
 namespace Modules\Products\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Modules\Cart\Models\Cart;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Categories\Models\Category;
-use Modules\Comments\Models\Comment;
-use Modules\Orders\Models\OrderItem;
-use Modules\Specifications\Models\Specification;
-
-// use Modules\Products\Database\Factories\ProductFactory;
 
 class Product extends Model
 {
+    use HasFactory;
 
     protected $fillable = [
+        'product_type_id',
         'title',
         'description',
         'main_image',
         'meta_title',
         'meta_description',
         'status',
+        'price',
+        'final_price',
         'discount_value',
         'discount_type',
-        'barcode',
-        'sku',
-        'stock',
-        'price',
-        'video'
+        'is_free',
+        'video',
     ];
 
-    // رابطه با دسته‌بندی‌ها
-    public function categories()
+    protected $casts = [
+        'is_free' => 'boolean',
+        'price' => 'integer',
+        'final_price' => 'integer',
+        'discount_value' => 'integer',
+    ];
+
+    // ---------------------------
+    // روابط
+    // ---------------------------
+
+    public function productType()
     {
-        return $this->belongsToMany(Category::class, 'category_product', 'product_id', 'category_id');
+        return $this->belongsTo(ProductType::class, 'product_type_id');
     }
 
-    // تصاویر محصول
+    public function files()
+    {
+        return $this->hasMany(ProductFile::class)->orderBy('sort_order');
+    }
+
     public function images()
     {
-        return $this->hasMany(ProductImage::class);
+        return $this->hasMany(ProductImage::class)->orderBy('sort_order');
     }
 
-    // واریانت‌ها
-    public function variants()
+    public function categories()
     {
-        return $this->hasMany(ProductVariant::class);
+        return $this->belongsToMany(Category::class, 'category_product');
     }
-    public function cartItems()
+
+    public function attributeValues()
     {
-        return $this->hasMany(Cart::class);
+        return $this->hasMany(ProductAttributeValue::class);
     }
-    public function orderItems()
+
+    // ---------------------------
+    // Scopes
+    // ---------------------------
+
+    public function scopePublished($query)
     {
-        return $this->hasMany(OrderItem::class);
+        return $query->where('status', 'published');
     }
-    public function comments()
+
+    // ---------------------------
+    // Helpers
+    // ---------------------------
+
+    /**
+     * آیا کل محصول رایگان است؟
+     */
+    public function isFree(): bool
     {
-        return $this->morphMany(Comment::class, 'commentable');
+        return $this->is_free || (int) $this->price === 0;
     }
-    public function specifications()
+
+    /**
+     * آیا فایل مشخصی از این محصول، مستقل از خریداری شدن محصول، قابل دانلود رایگان است؟
+     */
+    public function isFileFree(ProductFile $file): bool
     {
-        return $this->belongsToMany(Specification::class, 'product_specification_values')
-            ->withPivot('specification_value_id')
-            ->withTimestamps();
-    }
-    protected static function booted()
-    {
-        static::saving(function ($product) {
-            if ($product->discount_type === 'percent' && $product->discount_value > 0) {
-                $product->final_price = $product->price - ($product->price * $product->discount_value / 100);
-            } elseif ($product->discount_type === 'fixed' && $product->discount_value > 0) {
-                $product->final_price = $product->price - $product->discount_value;
-            } else {
-                $product->final_price = $product->price;
-            }
-        });
-    }
-    public static  function dashboardReport()
-    {
-        return [
-            'total_products'     => self::count(),
-            'active_products'    => self::where('status', 'published')->count(),
-            'inactive_products'  => self::where('status', 'unpublished')->count(),
-            'out_of_stock'       => self::where('stock', '<=', 0)->count(),
-            'average_price'      => round(self::avg('price')),
-            'max_price'          => self::max('price'),
-            'min_price'          => self::min('price'),
-        ];
-    }
-    public static function topDiscounted($limit = 10)
-    {
-        return self::select('*')
-            ->selectRaw("
-                CASE 
-                    WHEN discount_type = 'percent' 
-                        THEN (price * discount_value / 100)
-                    WHEN discount_type = 'fixed' 
-                        THEN discount_value
-                    ELSE 0
-                END as real_discount
-            ")
-            ->with([
-                'variants.values.attribute'
-            ])
-            ->orderByDesc('real_discount')
-            ->limit($limit)
-            ->get();
-    }
-    public static function latestProducts($limit = 8)
-    {
-        return self::where('status', 'published')
-            ->with([
-                'variants.values.attribute'
-            ])
-            ->orderBy('created_at', 'desc')
-            ->take($limit)
-            ->get();
+        return $this->isFree() || $file->is_free;
     }
 }

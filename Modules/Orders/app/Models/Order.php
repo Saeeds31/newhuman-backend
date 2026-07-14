@@ -4,24 +4,19 @@ namespace Modules\Orders\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Modules\Addresses\Models\Address;
 use Modules\Users\Models\User;
 use Carbon\Carbon;
-use Modules\Shipping\Models\Shipping;
-
-// use Modules\Orders\Database\Factories\OrderFactory;
+use Modules\Products\Models\Product;
 
 class Order extends Model
 {
     use HasFactory;
     protected $fillable = [
         'user_id',
-        'address_id',
-        'shipping_id',
         'subtotal',
         'discount_amount',
-        'shipping_cost',
         'total',
+        'product_id',
         'payment_method',
         'payment_status',
         'status',
@@ -56,29 +51,16 @@ class Order extends Model
     {
         return $this->belongsTo(User::class);
     }
-
-    public function address()
+    public function product()
     {
-        return $this->belongsTo(Address::class);
+        return $this->belongsTo(Product::class);
     }
-
-    public function shippingMethod()
-    {
-        return $this->belongsTo(Shipping::class);
-    }
-
-    public function items()
-    {
-        return $this->hasMany(OrderItem::class);
-    }
-
     public static function dashboardReport()
     {
         return [
             'total_orders'   => self::count(),
             'total_sales'    => self::sum('total'),
             'total_discount' => self::sum('discount_amount'),
-
             'today_orders'   => self::whereDate('created_at', Carbon::today())->count(),
             'month_orders'   => self::whereMonth('created_at', Carbon::now()->month)->count(),
         ];

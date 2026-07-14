@@ -96,9 +96,7 @@ class OrderRollbackService
             // موجودی قبلاً کم شده، نیاز به برگرداندن نیست
             // فقط وضعیت سفارش را آپدیت می‌کنیم
             
-            $newStatus = $order->reservation_type !== 'none' 
-                ? OrderStatus::RESERVED->value 
-                : OrderStatus::PROCESSING->value;
+            $newStatus = OrderStatus::PROCESSING->value;
             
             $order->update([
                 'status' => $newStatus,

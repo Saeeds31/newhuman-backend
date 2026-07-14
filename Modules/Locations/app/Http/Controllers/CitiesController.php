@@ -4,7 +4,6 @@ namespace Modules\Locations\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Modules\Addresses\Models\Address;
 use Modules\Locations\Http\Requests\CityStoreRequest;
 use Modules\Locations\Http\Requests\CityUpdateRequest;
 use Modules\Locations\Http\Requests\ProvinceStoreRequest;
@@ -90,13 +89,7 @@ class CitiesController extends Controller
         $data = $request->validated();
 
         $city->update($data);
-        $usedInAddress = Address::where('city_id', $city->id)->exists();
-        if ($usedInAddress) {
-            return response()->json([
-                'success' => false,
-                'message' => 'این شهر در آدرس کاربران استفاده شده و قابل حذف نیست.',
-            ], 422);
-        }
+        
         $notifications->create(
             "حذف شهر",
             " یک شهر   {$city->name}در سیستم حذف  شد",
@@ -115,13 +108,6 @@ class CitiesController extends Controller
      */
     public function destroy(City $city, NotificationService $notifications)
     {
-        $usedInAddress = Address::where('city_id', $city->id)->exists();
-        if ($usedInAddress) {
-            return response()->json([
-                'success' => false,
-                'message' => 'این شهر در آدرس کاربران استفاده شده و قابل حذف نیست.',
-            ], 422);
-        }
         $notifications->create(
             "حذف شهر",
             " یک شهر   {$city->name}از سیستم حذف  شد",

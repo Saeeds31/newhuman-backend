@@ -27,8 +27,6 @@ class CategoryUpdateRequest extends FormRequest
             'description'      => ['sometimes', 'string'],
             'parent_id'        => ['sometimes', 'nullable', 'exists:categories,id'],
 
-            'show_in_home'       => ['nullable', 'boolean'],
-            'show_products_in_home'       => ['nullable', 'boolean'],
         ];
     }
 
