@@ -30,4 +30,8 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
     // 
 
 });
-Route::prefix('v1/front')->group(function () {});
+Route::prefix('v1/front')->group(function () {
+    Route::get('products', [ProductController::class, 'frontIndex']);
+    Route::get('products/{productId}', [ProductController::class, 'frontDetail']);
+    Route::get('product-base-types', [ProductController::class, 'frontProductType']);
+});

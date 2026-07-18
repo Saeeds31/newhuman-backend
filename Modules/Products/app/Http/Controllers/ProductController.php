@@ -10,10 +10,21 @@ use Illuminate\Support\Str;
 use Modules\Products\Models\Product;
 use Modules\Products\Models\ProductAttribute;
 use Modules\Products\Models\ProductAttributeValue;
+use Modules\Products\Models\ProductFile;
 use Modules\Products\Models\ProductImage;
 
 class ProductController extends Controller
 {
+    public function frontDetail($productId)
+    {
+        $product = Product::with(['productType', 'images', 'categories', 'attributeValues', 'isFree'])->findOrFail($productId);
+        return response()->json(['data' => $product]);
+    }
+    public function frontProductType()
+    {
+        $types = ProductType::latest()->get();
+        return response()->json(['data' => $types]);
+    }
     public function index(Request $request)
     {
         $query = Product::with(['productType', 'categories', 'images']);
@@ -38,14 +49,43 @@ class ProductController extends Controller
 
         return response()->json(['data' => $products]);
     }
+    public function frontIndex(Request $request)
+    {
+        $query = Product::with(['productType', 'categories', 'images']);
+
+        if ($search = $request->get('search')) {
+            $query->where('title', 'like', "%{$search}%");
+        }
+
+        if ($request->filled('product_type_id')) {
+            $query->where('product_type_id', $request->product_type_id);
+        }
+        if ($request->filled('category_ids')) {
+            $categoryIds = explode(',', $request->category_ids);
+            $query->whereHas('categories', function ($q) use ($categoryIds) {
+                $q->whereIn('categories.id', $categoryIds);
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('is_free')) {
+            $query->where('is_free', $request->is_free);
+        }
+
+        $products = $query->orderBy('id', 'desc')->paginate(20);
+
+        return response()->json(['data' => $products]);
+    }
 
     // ذخیره محصول
     public function store(Request $request)
     {
         $categories = $request->input('categories', []);
         $attributes = $request->input('attributes', []);
+        $productFiles = $request->input('product_files', []);
 
-        // اگر string هست، تبدیل به آرایه کن
         if (is_string($categories)) {
             $categories = json_decode($categories, true) ?? [];
         }
@@ -54,11 +94,16 @@ class ProductController extends Controller
             $attributes = json_decode($attributes, true) ?? [];
         }
 
-        // اضافه کردن به request برای ولیدیشن
+        if (is_string($productFiles)) {
+            $productFiles = json_decode($productFiles, true) ?? [];
+        }
+
         $request->merge([
             'categories' => $categories,
-            'attributes' => $attributes
+            'attributes' => $attributes,
+            'product_files' => $productFiles
         ]);
+
         $validated = $request->validate([
             'product_type_id' => 'required|exists:product_types,id',
             'title' => 'required|string|max:255',
@@ -76,6 +121,12 @@ class ProductController extends Controller
             'images' => 'nullable|array',
             'images.*' => 'file|image|max:5120',
             'video' => 'nullable|file|max:204800|mimes:mp4,avi,mkv,mov',
+            'product_files' => 'nullable|array',
+            'product_files.*.title' => 'nullable|string|max:255',
+            'product_files.*.description' => 'nullable|string',
+            'product_files.*.path' => 'required|string|min:10', // 100MB
+            'product_files.*.is_free' => 'nullable|boolean',
+            'product_files.*.sort_order' => 'nullable|integer|min:0',
         ]);
 
         // محاسبه قیمت نهایی
@@ -106,10 +157,9 @@ class ProductController extends Controller
         ]);
 
         // آپلود تصاویر
-        $imagePaths = [];
         if ($request->hasFile('images')) {
             foreach ($request->file('images') as $index => $image) {
-                $path = $image->store('products', 'public');
+                $path = $image->store('products/images', 'public');
                 if ($index === 0) {
                     $product->update(['main_image' => $path]);
                 } else {
@@ -119,7 +169,6 @@ class ProductController extends Controller
                         'alt' => $request->alt ?? null,
                         'sort_order' => $index
                     ]);
-                    $imagePaths[] = $path;
                 }
             }
         }
@@ -128,6 +177,24 @@ class ProductController extends Controller
         if ($request->hasFile('video')) {
             $videoPath = $request->file('video')->store('products/videos', 'public');
             $product->update(['video' => $videoPath]);
+        }
+
+        // ========== آپلود فایل‌های محصول ==========
+        if (!empty($validated['product_files'])) {
+            foreach ($validated['product_files'] as $index => $fileData) {
+                // فقط آدرس ذخیره میشه
+                ProductFile::create([
+                    'product_id' => $product->id,
+                    'title' => $fileData['title'] ?? 'فایل بدون عنوان',
+                    'description' => $fileData['description'] ?? null,
+                    'path' => $fileData['path'], // فقط آدرس
+                    'original_name' => basename($fileData['path']),
+                    'extension' => pathinfo($fileData['path'], PATHINFO_EXTENSION),
+                    'size' => 0, // چون فایل آپلود نمیشه
+                    'is_free' => $fileData['is_free'] ?? false,
+                    'sort_order' => $fileData['sort_order'] ?? $index,
+                ]);
+            }
         }
 
         // ذخیره دسته‌بندی‌ها
@@ -147,11 +214,13 @@ class ProductController extends Controller
                 }
             }
         }
+
         return response()->json([
-            'data' => $product->load(['productType', 'categories', 'images', 'attributeValues']),
+            'data' => $product->load(['productType', 'categories', 'images', 'attributeValues', 'files']),
             'message' => 'محصول با موفقیت ایجاد شد'
         ], 201);
     }
+
     // نمایش یک محصول
     public function show(Product $product)
     {
@@ -162,36 +231,61 @@ class ProductController extends Controller
                 'images' => function ($q) {
                     $q->orderBy('sort_order');
                 },
-                'attributeValues'
+                'attributeValues',
+                'files' => function ($q) {
+                    $q->orderBy('sort_order');
+                }
             ])
         ]);
     }
 
     public function update(Request $request, Product $product)
     {
-        // دریافت داده‌ها
         $categories = $request->input('categories', []);
         $attributes = $request->input('attributes', []);
         $deletedImages = $request->input('deleted_images', []);
-
+        $deletedFiles = $request->input('deleted_files', []);
+        $updatedFiles = $request->input('updated_files', []);
+        $newFiles = $request->input('new_files', []);
+    
         if (is_string($categories)) {
             $categories = json_decode($categories, true) ?? [];
         }
-
+    
         if (is_string($attributes)) {
             $attributes = json_decode($attributes, true) ?? [];
         }
-
+    
         if (is_string($deletedImages)) {
             $deletedImages = json_decode($deletedImages, true) ?? [];
         }
-
+    
+        if (is_string($deletedFiles)) {
+            $deletedFiles = json_decode($deletedFiles, true) ?? [];
+        }
+    
+        if (is_string($updatedFiles)) {
+            $updatedFiles = json_decode($updatedFiles, true) ?? [];
+        }
+    
+        if (is_string($newFiles)) {
+            $newFiles = json_decode($newFiles, true) ?? [];
+        }
+    
+        if ($request->has('delete_video')) {
+            $deleteVideo = filter_var($request->delete_video, FILTER_VALIDATE_BOOLEAN);
+            $request->merge(['delete_video' => $deleteVideo]);
+        }
+    
         $request->merge([
             'categories' => $categories,
             'attributes' => $attributes,
-            'deleted_images' => $deletedImages
+            'deleted_images' => $deletedImages,
+            'deleted_files' => $deletedFiles,
+            'updated_files' => $updatedFiles,
+            'new_files' => $newFiles
         ]);
-
+    
         $validated = $request->validate([
             'product_type_id' => 'required|exists:product_types,id',
             'title' => 'required|string|max:255',
@@ -211,12 +305,22 @@ class ProductController extends Controller
             'deleted_images' => 'nullable|array',
             'deleted_images.*' => 'exists:product_images,id',
             'video' => 'nullable|file|max:204800|mimes:mp4,avi,mkv,mov',
-            'delete_video' => 'nullable|in:true,false,1,0,on,off',
+            'delete_video' => 'nullable|boolean',
+            'deleted_files' => 'nullable|array',
+            'deleted_files.*' => 'exists:product_files,id',
+            'updated_files' => 'nullable|array',
+            'updated_files.*.id' => 'required|exists:product_files,id',
+            'updated_files.*.title' => 'nullable|string|max:255',
+            'updated_files.*.path' => 'nullable|string|max:500',
+            'updated_files.*.is_free' => 'nullable|boolean',
+            'updated_files.*.sort_order' => 'nullable|integer|min:0',
+            'new_files' => 'nullable|array',
+            'new_files.*.title' => 'nullable|string|max:255',
+            'new_files.*.path' => 'required|string|max:500',
+            'new_files.*.is_free' => 'nullable|boolean',
+            'new_files.*.sort_order' => 'nullable|integer|min:0',
         ]);
-        if ($request->has('delete_video')) {
-            $deleteVideo = filter_var($request->delete_video, FILTER_VALIDATE_BOOLEAN);
-            $request->merge(['delete_video' => $deleteVideo]);
-        }
+    
         // محاسبه قیمت نهایی
         $finalPrice = $validated['price'] ?? 0;
         if (!empty($validated['discount_value']) && $validated['discount_value'] > 0) {
@@ -227,7 +331,7 @@ class ProductController extends Controller
             }
             $finalPrice = max(0, $finalPrice);
         }
-
+    
         // بروزرسانی اطلاعات اصلی
         $product->update([
             'product_type_id' => $validated['product_type_id'],
@@ -243,83 +347,120 @@ class ProductController extends Controller
             'meta_title' => $validated['meta_title'] ?? null,
             'meta_description' => $validated['meta_description'] ?? null,
         ]);
-
+    
         // ========== مدیریت تصاویر ==========
-
+    
         // ۱. حذف تصاویر انتخاب شده
         if (!empty($validated['deleted_images'])) {
             $imagesToDelete = ProductImage::whereIn('id', $validated['deleted_images'])
                 ->where('product_id', $product->id)
                 ->get();
-
+    
             foreach ($imagesToDelete as $image) {
-                // حذف فایل
                 Storage::disk('public')->delete($image->path);
-                // حذف رکورد
                 $image->delete();
             }
         }
-
+    
         // ۲. آپلود تصاویر جدید
-        $newImagePaths = [];
         if ($request->hasFile('images')) {
-            // دریافت آخرین sort_order موجود
             $lastSortOrder = $product->images()->max('sort_order') ?? -1;
-
+    
             foreach ($request->file('images') as $index => $image) {
-                $path = $image->store('products', 'public');
-
+                $path = $image->store('products/images', 'public');
+    
                 ProductImage::create([
                     'product_id' => $product->id,
                     'path' => $path,
                     'alt' => $request->alt ?? null,
                     'sort_order' => $lastSortOrder + $index + 1
                 ]);
-
-                $newImagePaths[] = $path;
             }
         }
-
+    
         // ۳. مدیریت main_image
-        // اگر تصاویر باقی مونده داریم
         $remainingImages = $product->images()->orderBy('sort_order')->get();
-
+    
         if ($remainingImages->count() > 0) {
-            // اگر main_image فعلی حذف شده یا اصلی‌ترین تصویر نیست
             $firstImage = $remainingImages->first();
             if ($product->main_image !== $firstImage->path) {
                 $product->update(['main_image' => $firstImage->path]);
             }
         } else {
-            // اگر هیچ تصویری باقی نمونده
             $product->update(['main_image' => null]);
         }
-
+    
         // ========== مدیریت ویدیو ==========
-
-        // حذف ویدیو
+    
         if ($request->has('delete_video') && $request->delete_video == true) {
             if ($product->video) {
                 Storage::disk('public')->delete($product->video);
                 $product->update(['video' => null]);
             }
         }
-
-        // آپلود ویدیو جدید
+    
         if ($request->hasFile('video')) {
-            // حذف ویدیو قدیمی
             if ($product->video) {
                 Storage::disk('public')->delete($product->video);
             }
             $videoPath = $request->file('video')->store('products/videos', 'public');
             $product->update(['video' => $videoPath]);
         }
-
+    
+        // ========== مدیریت فایل‌های محصول ==========
+    
+        // ۱. حذف فایل‌های انتخاب شده
+        if (!empty($validated['deleted_files'])) {
+            $filesToDelete = ProductFile::whereIn('id', $validated['deleted_files'])
+                ->where('product_id', $product->id)
+                ->get();
+    
+            foreach ($filesToDelete as $file) {
+                Storage::disk('public')->delete($file->path);
+                $file->delete();
+            }
+        }
+    
+        // ۲. ویرایش فایل‌های موجود
+        if (!empty($validated['updated_files'])) {
+            foreach ($validated['updated_files'] as $fileData) {
+                $existingFile = ProductFile::where('id', $fileData['id'])
+                    ->where('product_id', $product->id)
+                    ->first();
+    
+                if ($existingFile) {
+                    $existingFile->update([
+                        'title' => $fileData['title'] ?? $existingFile->title,
+                        'path' => $fileData['path'] ?? $existingFile->path,
+                        'is_free' => $fileData['is_free'] ?? $existingFile->is_free,
+                        'sort_order' => $fileData['sort_order'] ?? $existingFile->sort_order,
+                    ]);
+                }
+            }
+        }
+    
+        // ۳. افزودن فایل‌های جدید
+        if (!empty($validated['new_files'])) {
+            foreach ($validated['new_files'] as $fileData) {
+                ProductFile::create([
+                    'product_id' => $product->id,
+                    'title' => $fileData['title'] ?? 'فایل بدون عنوان',
+                    'description' => $fileData['description'] ?? null,
+                    'path' => $fileData['path'],
+                    'original_name' => basename($fileData['path']),
+                    'extension' => pathinfo($fileData['path'], PATHINFO_EXTENSION),
+                    'size' => 0,
+                    'is_free' => $fileData['is_free'] ?? false,
+                    'sort_order' => $fileData['sort_order'] ?? 0,
+                ]);
+            }
+        }
+    
         // ========== بروزرسانی دسته‌بندی‌ها ==========
         if (isset($validated['categories'])) {
             $product->categories()->sync($validated['categories']);
         }
-
+    
         // ========== بروزرسانی ویژگی‌ها ==========
         if (isset($validated['attributes'])) {
             foreach ($validated['attributes'] as $attrId => $value) {
@@ -327,7 +468,7 @@ class ProductController extends Controller
                     'product_id' => $product->id,
                     'product_attribute_id' => $attrId
                 ])->first();
-
+    
                 if ($attributeValue) {
                     if (!empty($value)) {
                         $attributeValue->update(['value' => $value]);
@@ -345,9 +486,9 @@ class ProductController extends Controller
                 }
             }
         }
-
+    
         return response()->json([
-            'data' => $product->load(['productType', 'categories', 'images', 'attributeValues']),
+            'data' => $product->load(['productType', 'categories', 'images', 'attributeValues', 'files']),
             'message' => 'محصول با موفقیت بروزرسانی شد'
         ]);
     }
