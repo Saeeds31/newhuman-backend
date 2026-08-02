@@ -31,9 +31,6 @@ class AuthController extends Controller
         if ($user) {
             return response()->json(['status' => 'login']);
         }
-
-        $this->sendOtp($request->mobile);
-        $otp = Otp::where('mobile', $request->mobile)->first();
         return response()->json([
             'status' => 'register'
         ]);
