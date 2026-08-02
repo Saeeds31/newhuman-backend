@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Modules\Banners\Models\Banner;
 use Modules\Categories\Models\Category;
 use Modules\Menus\Models\Menu;
+use Modules\Products\Models\Product;
 use Modules\Settings\Models\Setting;
 
 class FrontController extends Controller
@@ -43,6 +44,19 @@ class FrontController extends Controller
             'success' => true,
             'message' => 'منو ها',
             'data'    => $menus
+        ]);
+    }
+    public function getPodcast()
+    {
+        $podcasts = Product::with(['productType', 'images'])
+            ->where('product_type_id', 2)
+            ->published()
+            ->latest()->paginate(12);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'پادکست ها',
+            'data'    => $podcasts
         ]);
     }
     public function getSettings()

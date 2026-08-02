@@ -8,4 +8,6 @@ Route::prefix('v1/front')->group(function () {
     Route::get('banners', [FrontController::class, 'getBanners'])->name('front-banners');
     Route::get('menus', [FrontController::class, 'getMenus'])->name('front-menus');
     Route::get('settings', [FrontController::class, 'getSettings'])->name('front-settings');
+    Route::get('podcasts', [FrontController::class, 'getPodcast'])->name('front-getPodcast');
+    
 });
