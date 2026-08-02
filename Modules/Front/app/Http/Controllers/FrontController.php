@@ -48,7 +48,7 @@ class FrontController extends Controller
     }
     public function getPodcast()
     {
-        $podcasts = Product::with(['productType', 'images'])
+        $podcasts = Product::with(['productType', 'images','files'])
             ->where('product_type_id', 2)
             ->published()
             ->latest()->paginate(12);
