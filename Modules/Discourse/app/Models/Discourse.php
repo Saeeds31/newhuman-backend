@@ -15,6 +15,7 @@ class Discourse extends Model
      */
     protected $fillable = [
         'title',
+        'slug',
         'discourse_with',
         'video',
         'main_image',
