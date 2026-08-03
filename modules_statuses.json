@@ -28,5 +28,6 @@
     "Gateway": true,
     "Notifications": true,
     "Story": true,
-    "File": true
+    "File": true,
+    "Discourse": true
 }

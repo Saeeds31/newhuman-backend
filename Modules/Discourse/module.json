@@ -1,0 +1,11 @@
+{
+    "name": "Discourse",
+    "alias": "discourse",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Discourse\\Providers\\DiscourseServiceProvider"
+    ],
+    "files": []
+}

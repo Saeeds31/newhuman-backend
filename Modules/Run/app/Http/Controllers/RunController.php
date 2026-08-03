@@ -60,6 +60,7 @@ class RunController extends Controller
             'Comment'      => 'کامنت',
             'coupon'   => 'کد تخفیف',
             'Menu'   => 'منو',
+            'Discourse'   => 'گفتومان',
             'order'   => 'سفارش',
             'city'   => 'شهر',
             'story'   => 'استوری',

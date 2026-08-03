@@ -39,6 +39,7 @@
             "Modules\\Contact\\": "Modules/Contact/app/",
             "Modules\\Products\\": "Modules/Products/app/",
             "Modules\\Gateway\\": "Modules/Gateway/app/",
+            "Modules\\Discourse\\": "Modules/Discourse/app/",
             "Modules\\Notifications\\": "Modules/Notifications/app/",
             "Modules\\Reports\\": "Modules/Reports/app/",
             "Modules\\Dashboard\\": "Modules/Dashboard/app/",
