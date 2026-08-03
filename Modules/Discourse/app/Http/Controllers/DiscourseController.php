@@ -24,6 +24,7 @@ class DiscourseController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string'],
+            'slug' => ['required', 'string', 'max:255', 'unique:discourses,slug'],
             'discourse_with' => ['required', 'string'],
             'video' => ['required', 'string'],
             'main_image' => ['required', 'file', 'max:1024'],
@@ -55,8 +56,9 @@ class DiscourseController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string'],
             'discourse_with' => ['required', 'string'],
+            'slug' => ['nullable', 'string', 'max:255', 'unique:discourses,slug'],
             'video' => ['required', 'string'],
-            'main_image' => ['required', 'file', 'max:1024'],
+            'main_image' => ['nullable', 'file', 'max:1024'],
             'short_description' => ['required', 'string'],
             'description' => ['required', 'string'],
             'discourse_category_id' => [
@@ -112,6 +114,20 @@ class DiscourseController extends Controller
         return response()->json([
             'category' => $category,
             'data' => $discourses,
+        ]);
+    }
+    public function getFrontDetailDiscourse(?string $slug = null)
+    {
+        $discourse = Discourse::where('slug', $slug)->first();
+
+        if (! $discourse) {
+            return response()->json([
+                'message' => 'هیچ گفتومانی یافت نشد.'
+            ], 404);
+        }
+
+        return response()->json([
+            'discourse' => $discourse,
         ]);
     }
 }

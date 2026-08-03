@@ -10,5 +10,6 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
 });
 Route::prefix('v1/front')->group(function () {
     Route::get('discourse-categories', [DiscourseCategoryController::class, 'getFrontDiscourseCategory'])->name('getFrontDiscourseCategory');
-    Route::get('discourses', [DiscourseController::class, 'getFrontDiscourses'])->name('getFrontDiscourses');
+    Route::get('discourses/{slug}', [DiscourseController::class, 'getFrontDiscourses'])->name('getFrontDiscourses');
+    Route::get('discourse/{slug}', [DiscourseController::class, 'getFrontDetailDiscourse'])->name('getFrontDiscourses');
 });
