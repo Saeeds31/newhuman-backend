@@ -31,6 +31,8 @@ class AuthController extends Controller
         if ($user) {
             return response()->json(['status' => 'login']);
         }
+        $this->sendOtp($request->mobile);
+
         return response()->json([
             'status' => 'register'
         ]);
