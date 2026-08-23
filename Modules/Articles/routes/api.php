@@ -7,8 +7,7 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
     Route::apiResource('articles', ArticlesController::class)->names('articles');
 });
 Route::prefix('v1/front')->group(function () {
-    Route::get('articles', [ArticlesController::class,'frontArticles'])->name('frontArticles');
-    Route::get('articles/{id}', [ArticlesController::class,'frontArticle'])->name('frontArticle');
+    Route::get('articles', [ArticlesController::class, 'frontArticles'])->name('frontArticles');
+    Route::get('articles/{id}', [ArticlesController::class, 'frontArticle'])->name('frontArticle');
+    Route::get('articles/{id}/similar', [ArticlesController::class, 'relatedArticles'])->name('relatedArticles');
 });
-
-

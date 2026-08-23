@@ -12,6 +12,40 @@ use Modules\Notifications\Services\NotificationService;
 
 class ArticlesController extends Controller
 {
+    public function relatedArticles($id)
+    {
+        $article = Article::findOrFail($id)->first();
+        if (!$article) {
+            return response()->json([
+                'success' => false,
+                'message' => 'مقاله پیدا نشد',
+            ], 404);
+        }
+        $categoryIds = $article->categories->pluck('id');
+        $relatedArticles = [];
+        if ($categoryIds->isNotEmpty()) {
+            $relatedArticles = Article::with('author')
+                ->whereHas('categories', function ($q) use ($categoryIds) {
+                    $q->whereIn('article_categories.id', $categoryIds);
+                })
+                ->where('id', '!=', $article->id)
+                ->latest('created_at')
+                ->take(8)
+                ->get();
+        }
+        if (empty($relatedArticles) || $relatedArticles->isEmpty()) {
+            $relatedArticles = Article::with('author')
+                ->where('id', '!=', $article->id)
+                ->latest('created_at')
+                ->take(8)
+                ->get();
+        }
+        return response()->json([
+            'success' => true,
+            'message' => 'مقالات مشابه',
+            'data' => $relatedArticles
+        ]);
+    }
     public function frontArticles(Request $request)
     {
         $perPage = $request->get('per_page', 20);
