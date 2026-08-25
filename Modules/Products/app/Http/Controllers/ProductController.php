@@ -17,7 +17,8 @@ use Modules\Products\Models\ProductImage;
 class ProductController extends Controller
 {
     /**
-     * نمایش جزئیات محصول در فرانت (با پشتیبانی از فرزندان)
+     * نمایش جزئیات محصول در فرانت
+     * اگر محصول والد باشد، فرزندانش را نمایش می‌دهد
      */
     public function frontDetail($productId)
     {
@@ -26,33 +27,39 @@ class ProductController extends Controller
             'images',
             'categories',
             'attributeValues',
-            'children' => function ($q) {
-                $q->where('is_variation_active', true)
-                    ->orderBy('sort_order');
-            },
-            'children.files',
             'files'
         ])->findOrFail($productId);
 
-        // اگر محصول والد است، اطلاعات فرزندان رو هم برگردون
+        // اگر محصول والد است، فرزندان فعال را بارگذاری کن
         if ($product->isParent()) {
-            $product->load(['activeChildren.attributeValues', 'activeChildren.files']);
+            $product->load([
+                'activeChildren' => function ($q) {
+                    $q->with(['images', 'files', 'attributeValues', 'productType'])
+                        ->where('status', 'published');
+                }
+            ]);
         }
 
         return response()->json(['data' => $product]);
     }
 
     /**
-     * لیست محصولات برای فرانت (فقط محصولات ساده و والد)
+     * لیست محصولات برای فرانت
+     * فقط محصولات ساده و فرزندان را نمایش می‌دهد
+     * والدها را نمایش نمی‌دهد
      */
     public function frontIndex(Request $request)
     {
         $query = Product::with(['productType', 'categories', 'images'])
-            ->whereIn('product_kind', ['simple', 'parent'])
-            ->where('status', 'published');
+            ->whereIn('product_kind', ['simple', 'child'])
+            ->where('status', 'published')
+            ->where('show_in_front', true);
 
         if ($search = $request->get('search')) {
-            $query->where('title', 'like', "%{$search}%");
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
         }
 
         if ($request->filled('product_type_id')) {
@@ -66,26 +73,54 @@ class ProductController extends Controller
             });
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        // فیلتر بر اساس نوع فرزند
+        if ($request->filled('child_type')) {
+            $query->where('child_type', $request->child_type);
         }
 
-        if ($request->filled('is_free')) {
-            $query->where('is_free', $request->is_free);
+        // فیلتر بر اساس parent_id (برای نمایش فرزندان یک والد خاص)
+        if ($request->filled('parent_id')) {
+            $query->where('parent_id', $request->parent_id);
         }
 
-        $products = $query->orderBy('id', 'desc')->paginate(20);
+        // فیلتر قیمت
+        if ($request->filled('min_price')) {
+            $query->where(function($q) use ($request) {
+                $q->where('child_price', '>=', $request->min_price)
+                  ->orWhere('price', '>=', $request->min_price);
+            });
+        }
+
+        if ($request->filled('max_price')) {
+            $query->where(function($q) use ($request) {
+                $q->where('child_price', '<=', $request->max_price)
+                  ->orWhere('price', '<=', $request->max_price);
+            });
+        }
+
+        // مرتب‌سازی
+        $sortBy = $request->get('sort_by', 'id');
+        $sortOrder = $request->get('sort_order', 'desc');
+        
+        $allowedSorts = ['id', 'title', 'price', 'child_price', 'created_at', 'sold_count'];
+        if (in_array($sortBy, $allowedSorts)) {
+            $query->orderBy($sortBy, $sortOrder);
+        } else {
+            $query->orderBy('id', 'desc');
+        }
+
+        $products = $query->paginate($request->get('per_page', 20));
 
         return response()->json(['data' => $products]);
     }
 
     /**
      * لیست محصولات برای پنل ادمین
+     * همه محصولات را نمایش می‌دهد
      */
     public function index(Request $request)
     {
-        $query = Product::with(['productType', 'categories', 'images'])
-            ->whereIn('product_kind', ['simple', 'parent']);
+        $query = Product::with(['productType', 'categories', 'images', 'parent']);
 
         if ($search = $request->get('search')) {
             $query->where('title', 'like', "%{$search}%");
@@ -95,12 +130,16 @@ class ProductController extends Controller
             $query->where('product_type_id', $request->product_type_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        if ($request->filled('product_kind')) {
+            $query->where('product_kind', $request->product_kind);
         }
 
-        if ($request->filled('is_free')) {
-            $query->where('is_free', $request->is_free);
+        if ($request->filled('parent_id')) {
+            $query->where('parent_id', $request->parent_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
         }
 
         $products = $query->orderBy('id', 'desc')->paginate(20);
@@ -109,21 +148,36 @@ class ProductController extends Controller
     }
 
     /**
-     * ذخیره محصول جدید (با پشتیبانی از فرزندان)
+     * دریافت لیست فرزندان یک محصول والد
+     */
+    public function getChildren(Product $product)
+    {
+        if (!$product->isParent()) {
+            return response()->json([
+                'message' => 'این محصول والد نیست'
+            ], 400);
+        }
+
+        $children = $product->children()
+            ->with(['images', 'files', 'attributeValues'])
+            ->get();
+
+        return response()->json(['data' => $children]);
+    }
+
+    /**
+     * ذخیره محصول جدید
      */
     public function store(Request $request)
     {
-        // دریافت داده‌های JSON
         $categories = $this->parseJsonInput($request->input('categories', []));
         $attributes = $this->parseJsonInput($request->input('attributes', []));
         $productFiles = $this->parseJsonInput($request->input('product_files', []));
-        $children = $this->parseJsonInput($request->input('children', []));
 
         $request->merge([
             'categories' => $categories,
             'attributes' => $attributes,
-            'product_files' => $productFiles,
-            'children' => $children
+            'product_files' => $productFiles
         ]);
 
         $validated = $request->validate([
@@ -132,15 +186,43 @@ class ProductController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'required|in:draft,published,unpublished',
-            'product_kind' => 'required|in:simple,parent',
+            'product_kind' => 'required|in:simple,parent,child',
+            'parent_id' => 'nullable|exists:products,id',
+            'child_type' => 'nullable|in:online,in_person,recorded',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
 
-            // قیمت و تخفیف (برای محصولات ساده)
+            // قیمت برای محصولات ساده
             'price' => 'nullable|integer|min:0',
             'discount_value' => 'nullable|integer|min:0',
             'discount_type' => 'nullable|in:percent,fixed',
             'is_free' => 'boolean',
+
+            // قیمت برای فرزندان
+            'child_price' => 'nullable|integer|min:0',
+            'child_discount_price' => 'nullable|integer|min:0',
+
+            // فیلدهای اختصاصی فرزندان
+            'child_description' => 'nullable|string',
+            'child_meta_title' => 'nullable|string|max:255',
+            'child_meta_description' => 'nullable|string|max:500',
+            'child_thumbnail' => 'nullable|string|max:500',
+            'is_child_free' => 'boolean',
+            'child_discount_value' => 'nullable|integer|min:0',
+            'child_discount_type' => 'nullable|in:percent,fixed',
+            'meeting_link' => 'nullable|string|max:500',
+            'location' => 'nullable|string|max:500',
+            'max_attendees' => 'nullable|integer|min:0',
+            'stock' => 'nullable|integer|min:0',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'registration_deadline' => 'nullable|date',
+            'is_variation_active' => 'boolean',
+            'show_in_front' => 'boolean',
+            'sort_order' => 'nullable|integer|min:0',
+            'display_order' => 'nullable|integer|min:0',
+            'sku' => 'nullable|string|max:100|unique:products,sku',
+            'child_coupon_code' => 'nullable|string|max:50',
 
             // دسته‌بندی و ویژگی‌ها
             'categories' => 'nullable|array',
@@ -159,72 +241,94 @@ class ProductController extends Controller
             'product_files.*.path' => 'required|string|min:10',
             'product_files.*.is_free' => 'nullable|boolean',
             'product_files.*.sort_order' => 'nullable|integer|min:0',
-
-            // ========== اعتبارسنجی فرزندان ==========
-            'children' => 'nullable|array',
-            'children.*.child_type' => 'required|in:online,in_person,recorded',
-            'children.*.child_price' => 'nullable|integer|min:0',
-            'children.*.child_discount_price' => 'nullable|integer|min:0',
-            'children.*.meeting_link' => 'nullable|string|max:500',
-            'children.*.location' => 'nullable|string|max:500',
-            'children.*.max_attendees' => 'nullable|integer|min:0',
-            'children.*.stock' => 'nullable|integer|min:0',
-            'children.*.start_date' => 'nullable|date',
-            'children.*.end_date' => 'nullable|date',
-            'children.*.is_variation_active' => 'boolean',
-            'children.*.sort_order' => 'nullable|integer|min:0',
-            'children.*.sku' => 'nullable|string|max:100|unique:products,sku',
         ]);
+
+        // اعتبارسنجی شرطی برای فرزندان
+        if ($validated['product_kind'] === 'child') {
+            if (empty($validated['parent_id'])) {
+                return response()->json([
+                    'errors' => ['parent_id' => ['برای محصولات فرزند، والد الزامی است']]
+                ], 422);
+            }
+
+            if (empty($validated['child_type'])) {
+                return response()->json([
+                    'errors' => ['child_type' => ['برای محصولات فرزند، نوع الزامی است']]
+                ], 422);
+            }
+        }
 
         DB::beginTransaction();
 
         try {
-            // محاسبه قیمت نهایی برای محصول ساده یا والد
+            // محاسبه قیمت نهایی برای محصول ساده
             $finalPrice = $this->calculateFinalPrice(
                 $validated['price'] ?? 0,
                 $validated['discount_value'] ?? null,
                 $validated['discount_type'] ?? null
             );
 
-            // ایجاد محصول اصلی (والد یا ساده)
+            // ایجاد محصول
             $product = Product::create([
                 'product_type_id' => $validated['product_type_id'],
                 'title' => $validated['title'],
-                'slug' => Str::slug($validated['title']),
+                'slug' => Str::slug($validated['title'] . '-' . uniqid()),
                 'description' => $validated['description'] ?? null,
                 'status' => $validated['status'],
                 'product_kind' => $validated['product_kind'],
+                'parent_id' => $validated['parent_id'] ?? null,
+                'child_type' => $validated['child_type'] ?? null,
                 'price' => $validated['price'] ?? 0,
                 'final_price' => $finalPrice,
                 'discount_value' => $validated['discount_value'] ?? null,
                 'discount_type' => $validated['discount_type'] ?? null,
                 'is_free' => $validated['is_free'] ?? false,
+                'child_price' => $validated['child_price'] ?? null,
+                'child_discount_price' => $validated['child_discount_price'] ?? null,
+                'child_description' => $validated['child_description'] ?? null,
+                'child_meta_title' => $validated['child_meta_title'] ?? null,
+                'child_meta_description' => $validated['child_meta_description'] ?? null,
+                'child_thumbnail' => $validated['child_thumbnail'] ?? null,
+                'is_child_free' => $validated['is_child_free'] ?? false,
+                'child_discount_value' => $validated['child_discount_value'] ?? null,
+                'child_discount_type' => $validated['child_discount_type'] ?? null,
+                'meeting_link' => $validated['meeting_link'] ?? null,
+                'location' => $validated['location'] ?? null,
+                'max_attendees' => $validated['max_attendees'] ?? null,
+                'stock' => $validated['stock'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date' => $validated['end_date'] ?? null,
+                'registration_deadline' => $validated['registration_deadline'] ?? null,
+                'is_variation_active' => $validated['is_variation_active'] ?? true,
+                'show_in_front' => $validated['show_in_front'] ?? true,
+                'sort_order' => $validated['sort_order'] ?? 0,
+                'display_order' => $validated['display_order'] ?? 0,
+                'sku' => $validated['sku'] ?? null,
+                'child_coupon_code' => $validated['child_coupon_code'] ?? null,
                 'meta_title' => $validated['meta_title'] ?? null,
                 'meta_description' => $validated['meta_description'] ?? null,
             ]);
 
-            // ========== ایجاد فرزندان (اگر محصول والد باشد) ==========
-            if ($validated['product_kind'] === 'parent' && !empty($validated['children'])) {
-                foreach ($validated['children'] as $childData) {
-                    $this->createChildProduct($product->id, $childData);
-                }
+            // اگر محصول فرزند است، وضعیت رو با والد همگام کن
+            if ($product->isChild() && $product->parent) {
+                $product->update(['status' => $product->parent->status]);
             }
 
-            // ========== مدیریت تصاویر ==========
+            // مدیریت تصاویر
             $this->handleImages($request, $product);
 
-            // ========== مدیریت ویدیو ==========
+            // مدیریت ویدیو
             $this->handleVideo($request, $product);
 
-            // ========== مدیریت فایل‌ها ==========
+            // مدیریت فایل‌ها
             $this->handleFiles($validated['product_files'] ?? [], $product);
 
-            // ========== دسته‌بندی‌ها ==========
+            // دسته‌بندی‌ها
             if (!empty($validated['categories'])) {
                 $product->categories()->attach($validated['categories']);
             }
 
-            // ========== ویژگی‌ها ==========
+            // ویژگی‌ها
             $this->handleAttributes($validated['attributes'] ?? [], $product);
 
             DB::commit();
@@ -236,10 +340,12 @@ class ProductController extends Controller
                     'images',
                     'attributeValues',
                     'files',
+                    'parent',
                     'children'
                 ]),
                 'message' => 'محصول با موفقیت ایجاد شد'
             ], 201);
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -264,9 +370,11 @@ class ProductController extends Controller
             'files' => function ($q) {
                 $q->orderBy('sort_order');
             },
+            'parent',
             'children' => function ($q) {
                 $q->orderBy('sort_order');
             },
+            'children.images',
             'children.files',
             'children.attributeValues'
         ]);
@@ -285,9 +393,6 @@ class ProductController extends Controller
         $deletedFiles = $this->parseJsonInput($request->input('deleted_files', []));
         $updatedFiles = $this->parseJsonInput($request->input('updated_files', []));
         $newFiles = $this->parseJsonInput($request->input('new_files', []));
-        $children = $this->parseJsonInput($request->input('children', []));
-        $deletedChildren = $this->parseJsonInput($request->input('deleted_children', []));
-        $updatedChildren = $this->parseJsonInput($request->input('updated_children', []));
 
         $request->merge([
             'categories' => $categories,
@@ -295,10 +400,7 @@ class ProductController extends Controller
             'deleted_images' => $deletedImages,
             'deleted_files' => $deletedFiles,
             'updated_files' => $updatedFiles,
-            'new_files' => $newFiles,
-            'children' => $children,
-            'deleted_children' => $deletedChildren,
-            'updated_children' => $updatedChildren
+            'new_files' => $newFiles
         ]);
 
         if ($request->has('delete_video')) {
@@ -307,88 +409,69 @@ class ProductController extends Controller
         }
 
         $validated = $request->validate([
-            // اطلاعات اصلی
             'product_type_id' => 'required|exists:product_types,id',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'required|in:draft,published,unpublished',
-            'product_kind' => 'required|in:simple,parent',
+            'product_kind' => 'required|in:simple,parent,child',
+            'child_type' => 'nullable|in:online,in_person,recorded',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
 
-            // قیمت و تخفیف
+            // قیمت
             'price' => 'nullable|integer|min:0',
             'discount_value' => 'nullable|integer|min:0',
             'discount_type' => 'nullable|in:percent,fixed',
             'is_free' => 'boolean',
 
-            // دسته‌بندی و ویژگی‌ها
+            // قیمت فرزندان
+            'child_price' => 'nullable|integer|min:0',
+            'child_discount_price' => 'nullable|integer|min:0',
+
+            // فیلدهای اختصاصی فرزندان
+            'child_description' => 'nullable|string',
+            'child_meta_title' => 'nullable|string|max:255',
+            'child_meta_description' => 'nullable|string|max:500',
+            'child_thumbnail' => 'nullable|string|max:500',
+            'is_child_free' => 'boolean',
+            'child_discount_value' => 'nullable|integer|min:0',
+            'child_discount_type' => 'nullable|in:percent,fixed',
+            'meeting_link' => 'nullable|string|max:500',
+            'location' => 'nullable|string|max:500',
+            'max_attendees' => 'nullable|integer|min:0',
+            'stock' => 'nullable|integer|min:0',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'registration_deadline' => 'nullable|date',
+            'is_variation_active' => 'boolean',
+            'show_in_front' => 'boolean',
+            'sort_order' => 'nullable|integer|min:0',
+            'display_order' => 'nullable|integer|min:0',
+            'sku' => 'nullable|string|max:100|unique:products,sku,' . $product->id,
+            'child_coupon_code' => 'nullable|string|max:50',
+
             'categories' => 'nullable|array',
             'categories.*' => 'exists:categories,id',
             'attributes' => 'nullable|array',
-
-            // تصاویر
             'images' => 'nullable|array',
             'images.*' => 'file|image|max:5120',
             'deleted_images' => 'nullable|array',
             'deleted_images.*' => 'exists:product_images,id',
-
-            // ویدیو
             'video' => 'nullable|file|max:204800|mimes:mp4,avi,mkv,mov',
             'delete_video' => 'nullable|boolean',
-
-            // فایل‌های موجود
             'updated_files' => 'nullable|array',
             'updated_files.*.id' => 'required|exists:product_files,id',
             'updated_files.*.title' => 'nullable|string|max:255',
             'updated_files.*.path' => 'nullable|string|max:500',
             'updated_files.*.is_free' => 'nullable|boolean',
             'updated_files.*.sort_order' => 'nullable|integer|min:0',
-
-            // فایل‌های جدید
             'new_files' => 'nullable|array',
             'new_files.*.title' => 'nullable|string|max:255',
             'new_files.*.path' => 'required|string|max:500',
             'new_files.*.is_free' => 'nullable|boolean',
             'new_files.*.sort_order' => 'nullable|integer|min:0',
-
-            // فایل‌های حذف شده
             'deleted_files' => 'nullable|array',
             'deleted_files.*' => 'exists:product_files,id',
-
-            // ========== اعتبارسنجی فرزندان ==========
-            'children' => 'nullable|array',
-            'children.*.child_type' => 'required|in:online,in_person,recorded',
-            'children.*.child_price' => 'nullable|integer|min:0',
-            'children.*.child_discount_price' => 'nullable|integer|min:0',
-            'children.*.meeting_link' => 'nullable|string|max:500',
-            'children.*.location' => 'nullable|string|max:500',
-            'children.*.max_attendees' => 'nullable|integer|min:0',
-            'children.*.stock' => 'nullable|integer|min:0',
-            'children.*.start_date' => 'nullable|date',
-            'children.*.end_date' => 'nullable|date',
-            'children.*.is_variation_active' => 'boolean',
-            'children.*.sort_order' => 'nullable|integer|min:0',
-            'children.*.sku' => 'nullable|string|max:100',
-
-            // بروزرسانی فرزندان موجود
-            'updated_children' => 'nullable|array',
-            'updated_children.*.id' => 'required|exists:products,id',
-            'updated_children.*.child_type' => 'required|in:online,in_person,recorded',
-            'updated_children.*.child_price' => 'nullable|integer|min:0',
-            'updated_children.*.child_discount_price' => 'nullable|integer|min:0',
-            'updated_children.*.meeting_link' => 'nullable|string|max:500',
-            'updated_children.*.location' => 'nullable|string|max:500',
-            'updated_children.*.max_attendees' => 'nullable|integer|min:0',
-            'updated_children.*.stock' => 'nullable|integer|min:0',
-            'updated_children.*.start_date' => 'nullable|date',
-            'updated_children.*.end_date' => 'nullable|date',
-            'updated_children.*.is_variation_active' => 'boolean',
-            'updated_children.*.sort_order' => 'nullable|integer|min:0',
-
-            // حذف فرزندان
-            'deleted_children' => 'nullable|array',
-            'deleted_children.*' => 'exists:products,id',
         ]);
 
         DB::beginTransaction();
@@ -401,83 +484,57 @@ class ProductController extends Controller
                 $validated['discount_type'] ?? null
             );
 
-            // بروزرسانی محصول اصلی
             $product->update([
                 'product_type_id' => $validated['product_type_id'],
                 'title' => $validated['title'],
-                'slug' => Str::slug($validated['title']),
+                'slug' => Str::slug($validated['title'] . '-' . $product->id),
                 'description' => $validated['description'] ?? null,
                 'status' => $validated['status'],
                 'product_kind' => $validated['product_kind'],
+                'child_type' => $validated['child_type'] ?? null,
                 'price' => $validated['price'] ?? 0,
                 'final_price' => $finalPrice,
                 'discount_value' => $validated['discount_value'] ?? null,
                 'discount_type' => $validated['discount_type'] ?? null,
                 'is_free' => $validated['is_free'] ?? false,
+                'child_price' => $validated['child_price'] ?? null,
+                'child_discount_price' => $validated['child_discount_price'] ?? null,
+                'child_description' => $validated['child_description'] ?? null,
+                'child_meta_title' => $validated['child_meta_title'] ?? null,
+                'child_meta_description' => $validated['child_meta_description'] ?? null,
+                'child_thumbnail' => $validated['child_thumbnail'] ?? null,
+                'is_child_free' => $validated['is_child_free'] ?? false,
+                'child_discount_value' => $validated['child_discount_value'] ?? null,
+                'child_discount_type' => $validated['child_discount_type'] ?? null,
+                'meeting_link' => $validated['meeting_link'] ?? null,
+                'location' => $validated['location'] ?? null,
+                'max_attendees' => $validated['max_attendees'] ?? null,
+                'stock' => $validated['stock'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date' => $validated['end_date'] ?? null,
+                'registration_deadline' => $validated['registration_deadline'] ?? null,
+                'is_variation_active' => $validated['is_variation_active'] ?? true,
+                'show_in_front' => $validated['show_in_front'] ?? true,
+                'sort_order' => $validated['sort_order'] ?? 0,
+                'display_order' => $validated['display_order'] ?? 0,
+                'sku' => $validated['sku'] ?? null,
+                'child_coupon_code' => $validated['child_coupon_code'] ?? null,
                 'meta_title' => $validated['meta_title'] ?? null,
                 'meta_description' => $validated['meta_description'] ?? null,
             ]);
 
-            // ========== مدیریت فرزندان ==========
-            if ($validated['product_kind'] === 'parent') {
-                // ۱. حذف فرزندان
-                if (!empty($validated['deleted_children'])) {
-                    $childrenToDelete = Product::whereIn('id', $validated['deleted_children'])
-                        ->where('parent_id', $product->id)
-                        ->get();
-
-                    foreach ($childrenToDelete as $child) {
-                        // حذف فایل‌های مرتبط
-                        foreach ($child->files as $file) {
-                            Storage::disk('public')->delete($file->path);
-                            $file->delete();
-                        }
-                        $child->delete();
-                    }
-                }
-
-                // ۲. بروزرسانی فرزندان موجود
-                if (!empty($validated['updated_children'])) {
-                    foreach ($validated['updated_children'] as $childData) {
-                        $child = Product::where('id', $childData['id'])
-                            ->where('parent_id', $product->id)
-                            ->first();
-
-                        if ($child) {
-                            $child->update([
-                                'child_type' => $childData['child_type'],
-                                'child_price' => $childData['child_price'] ?? null,
-                                'child_discount_price' => $childData['child_discount_price'] ?? null,
-                                'meeting_link' => $childData['meeting_link'] ?? null,
-                                'location' => $childData['location'] ?? null,
-                                'max_attendees' => $childData['max_attendees'] ?? null,
-                                'stock' => $childData['stock'] ?? null,
-                                'start_date' => $childData['start_date'] ?? null,
-                                'end_date' => $childData['end_date'] ?? null,
-                                'is_variation_active' => $childData['is_variation_active'] ?? true,
-                                'sort_order' => $childData['sort_order'] ?? 0,
-                                'sku' => $childData['sku'] ?? null,
-                                'status' => $product->status, // همگام با والد
-                            ]);
-                        }
-                    }
-                }
-
-                // ۳. ایجاد فرزندان جدید
-                if (!empty($validated['children'])) {
-                    foreach ($validated['children'] as $childData) {
-                        $this->createChildProduct($product->id, $childData, $product->status);
-                    }
-                }
+            // همگام‌سازی وضعیت فرزندان با والد
+            if ($product->isParent()) {
+                $product->children()->update(['status' => $product->status]);
             }
 
-            // ========== مدیریت تصاویر ==========
+            // مدیریت تصاویر
             $this->handleImages($request, $product, $validated['deleted_images'] ?? []);
 
-            // ========== مدیریت ویدیو ==========
+            // مدیریت ویدیو
             $this->handleVideo($request, $product, $validated['delete_video'] ?? false);
 
-            // ========== مدیریت فایل‌ها ==========
+            // مدیریت فایل‌ها
             $this->handleFilesUpdate(
                 $product,
                 $validated['updated_files'] ?? [],
@@ -485,12 +542,12 @@ class ProductController extends Controller
                 $validated['deleted_files'] ?? []
             );
 
-            // ========== بروزرسانی دسته‌بندی‌ها ==========
+            // بروزرسانی دسته‌بندی‌ها
             if (isset($validated['categories'])) {
                 $product->categories()->sync($validated['categories']);
             }
 
-            // ========== بروزرسانی ویژگی‌ها ==========
+            // بروزرسانی ویژگی‌ها
             $this->handleAttributesUpdate($validated['attributes'] ?? [], $product);
 
             DB::commit();
@@ -502,10 +559,12 @@ class ProductController extends Controller
                     'images',
                     'attributeValues',
                     'files',
+                    'parent',
                     'children'
                 ]),
                 'message' => 'محصول با موفقیت بروزرسانی شد'
             ]);
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -523,24 +582,30 @@ class ProductController extends Controller
         DB::beginTransaction();
 
         try {
-            // حذف فرزندان (اگر والد باشد)
+            // اگر محصول والد است، فرزندانش را هم حذف کن
             if ($product->isParent()) {
                 foreach ($product->children as $child) {
                     foreach ($child->files as $file) {
                         Storage::disk('public')->delete($file->path);
                     }
+                    foreach ($child->images as $image) {
+                        Storage::disk('public')->delete($image->path);
+                    }
+                    if ($child->video) {
+                        Storage::disk('public')->delete($child->video);
+                    }
                     $child->delete();
                 }
-            }
-
-            // حذف تصاویر
-            foreach ($product->images as $image) {
-                Storage::disk('public')->delete($image->path);
             }
 
             // حذف فایل‌ها
             foreach ($product->files as $file) {
                 Storage::disk('public')->delete($file->path);
+            }
+
+            // حذف تصاویر
+            foreach ($product->images as $image) {
+                Storage::disk('public')->delete($image->path);
             }
 
             // حذف ویدیو
@@ -553,6 +618,7 @@ class ProductController extends Controller
             DB::commit();
 
             return response()->json(['message' => 'محصول حذف شد']);
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -560,6 +626,52 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * تغییر وضعیت محصول
+     */
+    public function toggleStatus(Product $product)
+    {
+        $statuses = ['draft', 'published', 'unpublished'];
+        $currentIndex = array_search($product->status, $statuses);
+        $nextIndex = ($currentIndex + 1) % count($statuses);
+
+        $product->update(['status' => $statuses[$nextIndex]]);
+
+        // اگر محصول والد است، وضعیت فرزندان را هم تغییر بده
+        if ($product->isParent()) {
+            $product->children()->update(['status' => $statuses[$nextIndex]]);
+        }
+
+        return response()->json([
+            'data' => $product,
+            'message' => 'وضعیت محصول تغییر کرد'
+        ]);
+    }
+
+    /**
+     * دریافت ویژگی‌های یک نوع محصول
+     */
+    public function getAttributes(ProductType $productType)
+    {
+        $attributes = ProductAttribute::where('product_type_id', $productType->id)
+            ->orderBy('sort_order')
+            ->get();
+
+        return response()->json(['data' => $attributes]);
+    }
+
+    /**
+     * دریافت انواع محصولات (برای فرانت)
+     */
+    public function frontProductType()
+    {
+        $types = ProductType::where('is_active', true)
+            ->latest()
+            ->get();
+
+        return response()->json(['data' => $types]);
     }
 
     // ========== متدهای کمکی ==========
@@ -590,53 +702,6 @@ class ProductController extends Controller
             $finalPrice = max(0, $finalPrice);
         }
         return $finalPrice;
-    }
-
-    /**
-     * ایجاد محصول فرزند
-     */
-    private function createChildProduct($parentId, $childData, $parentStatus = 'published')
-    {
-        // اگر اسلاگ تکراری نباشد
-        $slug = $childData['sku'] ?? Str::slug($childData['child_type'] . '-' . uniqid());
-
-        return Product::create([
-            'parent_id' => $parentId,
-            'product_type_id' => null, // فرزند از والد می‌گیرد
-            'product_kind' => 'child',
-            'child_type' => $childData['child_type'],
-            'title' => $childData['title'] ?? $this->getChildTypeLabel($childData['child_type']),
-            'slug' => $slug,
-            'description' => $childData['description'] ?? null,
-            'status' => $parentStatus,
-            'child_price' => $childData['child_price'] ?? null,
-            'child_discount_price' => $childData['child_discount_price'] ?? null,
-            'meeting_link' => $childData['meeting_link'] ?? null,
-            'location' => $childData['location'] ?? null,
-            'max_attendees' => $childData['max_attendees'] ?? null,
-            'stock' => $childData['stock'] ?? null,
-            'start_date' => $childData['start_date'] ?? null,
-            'end_date' => $childData['end_date'] ?? null,
-            'is_variation_active' => $childData['is_variation_active'] ?? true,
-            'sort_order' => $childData['sort_order'] ?? 0,
-            'sku' => $childData['sku'] ?? null,
-            'is_free' => ($childData['child_price'] ?? 0) == 0,
-            'price' => 0,
-            'final_price' => 0,
-        ]);
-    }
-
-    /**
-     * دریافت برچسب فارسی نوع فرزند
-     */
-    private function getChildTypeLabel($type)
-    {
-        $labels = [
-            'online' => 'نسخه آنلاین',
-            'in_person' => 'نسخه حضوری',
-            'recorded' => 'نسخه ضبط شده',
-        ];
-        return $labels[$type] ?? $type;
     }
 
     /**
@@ -828,41 +893,5 @@ class ProductController extends Controller
                 }
             }
         }
-    }
-
-    // ========== متدهای دیگر (بدون تغییر) ==========
-
-    public function frontProductType()
-    {
-        $types = ProductType::latest()->get();
-        return response()->json(['data' => $types]);
-    }
-
-    public function getAttributes(ProductType $productType)
-    {
-        $attributes = ProductAttribute::where('product_type_id', $productType->id)
-            ->orderBy('sort_order')
-            ->get();
-
-        return response()->json(['data' => $attributes]);
-    }
-
-    public function toggleStatus(Product $product)
-    {
-        $statuses = ['draft', 'published', 'unpublished'];
-        $currentIndex = array_search($product->status, $statuses);
-        $nextIndex = ($currentIndex + 1) % count($statuses);
-
-        $product->update(['status' => $statuses[$nextIndex]]);
-
-        // اگر محصول والد است، وضعیت فرزندان را هم تغییر بده
-        if ($product->isParent()) {
-            $product->children()->update(['status' => $statuses[$nextIndex]]);
-        }
-
-        return response()->json([
-            'data' => $product,
-            'message' => 'وضعیت محصول تغییر کرد'
-        ]);
     }
 }
