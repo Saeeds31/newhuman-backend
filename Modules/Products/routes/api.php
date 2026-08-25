@@ -34,4 +34,6 @@ Route::prefix('v1/front')->group(function () {
     Route::get('products', [ProductController::class, 'frontIndex']);
     Route::get('products/{productId}', [ProductController::class, 'frontDetail']);
     Route::get('product-base-types', [ProductController::class, 'frontProductType']);
+    Route::get('products/parents', [ProductController::class, 'getParentProducts']);
+    Route::get('products/{parentId}/children-list', [ProductController::class, 'getChildrenByParentId']);
 });

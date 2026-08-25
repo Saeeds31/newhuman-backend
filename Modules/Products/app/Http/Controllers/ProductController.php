@@ -56,9 +56,9 @@ class ProductController extends Controller
             ->where('show_in_front', true);
 
         if ($search = $request->get('search')) {
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -85,23 +85,23 @@ class ProductController extends Controller
 
         // فیلتر قیمت
         if ($request->filled('min_price')) {
-            $query->where(function($q) use ($request) {
+            $query->where(function ($q) use ($request) {
                 $q->where('child_price', '>=', $request->min_price)
-                  ->orWhere('price', '>=', $request->min_price);
+                    ->orWhere('price', '>=', $request->min_price);
             });
         }
 
         if ($request->filled('max_price')) {
-            $query->where(function($q) use ($request) {
+            $query->where(function ($q) use ($request) {
                 $q->where('child_price', '<=', $request->max_price)
-                  ->orWhere('price', '<=', $request->max_price);
+                    ->orWhere('price', '<=', $request->max_price);
             });
         }
 
         // مرتب‌سازی
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'desc');
-        
+
         $allowedSorts = ['id', 'title', 'price', 'child_price', 'created_at', 'sold_count'];
         if (in_array($sortBy, $allowedSorts)) {
             $query->orderBy($sortBy, $sortOrder);
@@ -345,7 +345,6 @@ class ProductController extends Controller
                 ]),
                 'message' => 'محصول با موفقیت ایجاد شد'
             ], 201);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -564,7 +563,6 @@ class ProductController extends Controller
                 ]),
                 'message' => 'محصول با موفقیت بروزرسانی شد'
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -618,7 +616,6 @@ class ProductController extends Controller
             DB::commit();
 
             return response()->json(['message' => 'محصول حذف شد']);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -893,5 +890,93 @@ class ProductController extends Controller
                 }
             }
         }
+    }
+    /**
+     * دریافت همه محصولات والد (محصولاتی که فرزند دارند)
+     */
+    public function getParentProducts(Request $request)
+    {
+        $query = Product::with(['productType', 'categories', 'images'])
+            ->where('product_kind', 'parent')
+            ->where('status', 'published');
+
+        // فیلتر بر اساس جستجو
+        if ($search = $request->get('search')) {
+            $query->where('title', 'like', "%{$search}%");
+        }
+
+        // فیلتر بر اساس نوع محصول
+        if ($request->filled('product_type_id')) {
+            $query->where('product_type_id', $request->product_type_id);
+        }
+
+        // مرتب‌سازی
+        $sortBy = $request->get('sort_by', 'id');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $allowedSorts = ['id', 'title', 'created_at'];
+        if (in_array($sortBy, $allowedSorts)) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        $parents = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'data' => $parents,
+            'message' => 'محصولات والد با موفقیت دریافت شدند'
+        ]);
+    }
+
+    /**
+     * دریافت فرزندان یک محصول والد با آیدی
+     */
+    public function getChildrenByParentId($parentId)
+    {
+        // بررسی وجود محصول والد
+        $parent = Product::where('id', $parentId)
+            ->where('product_kind', 'parent')
+            ->first();
+
+        if (!$parent) {
+            return response()->json([
+                'message' => 'محصول والد مورد نظر یافت نشد'
+            ], 404);
+        }
+
+        // دریافت فرزندان
+        $children = Product::with([
+            'productType',
+            'images',
+            'files',
+            'attributeValues'
+        ])
+            ->where('parent_id', $parentId)
+            ->where('product_kind', 'child')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        // اضافه کردن اطلاعات تکمیلی به هر فرزند
+        $children->each(function ($child) {
+            // برچسب نوع
+            $child->type_label = $child->child_type_label;
+
+            // قیمت نهایی فرزند
+            $child->final_child_price = $child->getPriceForChild();
+
+            // موجودی باقی‌مانده
+            $child->available_stock = $child->available_stock;
+
+            // وضعیت موجودی
+            $child->stock_status = $child->isOutOfStock() ? 'اتمام موجودی' : 'موجود';
+        });
+
+        return response()->json([
+            'data' => [
+                'parent' => $parent,
+                'children' => $children,
+                'total' => $children->count()
+            ],
+            'message' => 'فرزندان محصول با موفقیت دریافت شدند'
+        ]);
     }
 }
