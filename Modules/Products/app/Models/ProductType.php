@@ -26,6 +26,11 @@ class ProductType extends Model
     {
         return $this->hasMany(Product::class);
     }
+    public function mainProducts()
+    {
+        return $this->hasMany(Product::class)
+            ->whereIn('product_kind', ['simple', 'parent']);
+    }
 
     public function attributes()
     {

@@ -86,6 +86,10 @@ class CommentsController extends Controller
         $comment = Comment::findOrFail($id);
         return response()->json($comment->load(['user', 'replies.user']));
     }
+    public function stats()
+    {
+        return response()->json(Comment::dashboardReport());
+    }
     // لیست همه کامنت‌ها
     public function indexAdmin()
     {

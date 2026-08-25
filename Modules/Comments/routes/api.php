@@ -9,6 +9,7 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
     Route::post('/comments/{id}/status', [CommentsController::class, 'updateStatus']);
     Route::post('/comments/{id}/reply', [CommentsController::class, 'reply']);
     Route::post('/comments/{id}/delete', [CommentsController::class, 'destroy']);
+    Route::get('/comments-stats', [CommentsController::class, 'stats'])->name('commentsstats');
 });
 Route::middleware(['auth:sanctum'])->prefix('v1/front')->group(function () {
     Route::post('/articles/{id}/comments', [CommentsController::class, 'storeArticle']);
