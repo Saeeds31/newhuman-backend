@@ -28,4 +28,15 @@ class DashboardController extends Controller
             ]
         );
     }
+     public function uploadImage(Request $request)
+    {
+        $data = $request->validate([
+            'file' => 'required|file|max:1024'
+        ]);
+        $imagePath = "";
+        if ($request->hasFile('file')) {
+            $imagePath = $request->file('file')->store('uploads/files/images', 'public');
+        }
+        return response()->json(['url' => 'https://api.padhosha.ir/storage_public/' . $imagePath]);
+    }
 }
