@@ -47,9 +47,9 @@ Route::prefix('v1/front')->group(function () {
     Route::get('product-base-types', [ProductController::class, 'frontProductType']);
     Route::get('products-parents', [ProductController::class, 'getParentProducts']);
     Route::get('products/{parentId}/children-list', [ProductController::class, 'getChildrenByParentId']);
-    Route::get('/certificates/user/{userId}', [CertificateController::class, 'getUserCertificates']);
 });
 Route::middleware(['auth:sanctum'])->prefix('v1/front')->group(function () {
+    Route::get('/certificates/user', [CertificateController::class, 'getUserCertificates']);
     Route::prefix('views')->group(function () {
         Route::post('/', [ViewController::class, 'storeOrUpdate']);
         Route::get('/product/{productId}/progress', [ViewController::class, 'getProductProgress']);

@@ -13,6 +13,7 @@ use Modules\Products\Models\ProductAttribute;
 use Modules\Products\Models\ProductAttributeValue;
 use Modules\Products\Models\ProductFile;
 use Modules\Products\Models\ProductImage;
+use Modules\Products\Models\View;
 
 class ProductController extends Controller
 {
@@ -38,6 +39,46 @@ class ProductController extends Controller
                         ->where('status', 'published');
                 }
             ]);
+        }
+
+        // ========== اضافه کردن وضعیت مشاهده برای کاربر لاگین شده ==========
+        if (auth()->check()) {
+            $userId = auth()->id();
+
+            // دریافت همه View های کاربر برای فایل‌های این محصول
+            $fileIds = $product->files->pluck('id')->toArray();
+
+            // اگر محصول والد است، ID فایل‌های فرزندان رو هم اضافه کن
+            if ($product->isParent() && $product->activeChildren) {
+                foreach ($product->activeChildren as $child) {
+                    $fileIds = array_merge($fileIds, $child->files->pluck('id')->toArray());
+                }
+            }
+
+            // دریافت همه Views در یک کوئری
+            $views = View::where('user_id', $userId)
+                ->whereIn('product_file_id', $fileIds)
+                ->get()
+                ->keyBy('product_file_id');
+
+            // تابع کمکی برای تنظیم وضعیت فایل‌ها
+            $setFileStatus = function ($files) use ($views) {
+                foreach ($files as $file) {
+                    $view = $views->get($file->id);
+                    $file->is_watched = $view ? true : false;
+                }
+                return $files;
+            };
+
+            // اعمال روی فایل‌های محصول اصلی
+            $product->files = $setFileStatus($product->files);
+
+            // اعمال روی فایل‌های فرزندان
+            if ($product->isParent() && $product->activeChildren) {
+                foreach ($product->activeChildren as $child) {
+                    $child->files = $setFileStatus($child->files);
+                }
+            }
         }
 
         return response()->json(['data' => $product]);

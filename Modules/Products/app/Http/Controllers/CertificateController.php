@@ -60,13 +60,21 @@ class CertificateController extends Controller
     /**
      * نمایش گواهینامه‌های یک کاربر خاص
      */
-    public function getUserCertificates(Request $request, $userId)
+    public function getUserCertificates(Request $request)
     {
         try {
-            $user = User::findOrFail($userId);
+            // دریافت کاربر لاگین شده
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'لطفاً وارد سیستم شوید'
+                ], 401);
+            }
 
             $certificates = Certificate::with(['product'])
-                ->where('user_id', $userId)
+                ->where('user_id', $user->id)
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -79,11 +87,11 @@ class CertificateController extends Controller
                 ],
                 'message' => 'گواهینامه‌های کاربر با موفقیت بارگذاری شد'
             ]);
-        } catch (ModelNotFoundException $e) {
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'کاربر مورد نظر یافت نشد'
-            ], 404);
+                'message' => 'خطا در دریافت گواهینامه‌ها'
+            ], 500);
         }
     }
 
