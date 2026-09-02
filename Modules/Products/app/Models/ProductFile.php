@@ -31,4 +31,8 @@ class ProductFile extends Model
     {
         return $this->belongsTo(Product::class);
     }
+    public function view()
+    {
+        return $this->hasOne(View::class);
+    }
 }

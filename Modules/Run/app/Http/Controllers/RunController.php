@@ -62,6 +62,7 @@ class RunController extends Controller
             'Menu'   => 'منو',
             'Discourse'   => 'گفتومان',
             'order'   => 'سفارش',
+            'certificate'   => 'گواهینامه',
             'city'   => 'شهر',
             'story'   => 'استوری',
             'province'   => 'استان',

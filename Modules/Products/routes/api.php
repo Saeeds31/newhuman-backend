@@ -1,11 +1,13 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Modules\Products\Http\Controllers\CertificateController;
 use Modules\Products\Http\Controllers\ProductAttributeController;
 use Modules\Products\Http\Controllers\ProductController;
 use Modules\Products\Http\Controllers\ProductsController;
 use Modules\Products\Http\Controllers\ProductTypeController;
 use Modules\Products\Http\Controllers\ProductVariantController;
+use Modules\Products\Http\Controllers\ViewController;
 
 Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
     Route::apiResource('product-types', ProductTypeController::class);
@@ -27,8 +29,17 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
     Route::get('product-types/{productType}/attributes', [ProductController::class, 'getAttributes']);
 
 
-    // 
-
+    // certificates
+    Route::prefix('certificates')->group(function () {
+        Route::get('/', [CertificateController::class, 'index']);
+        Route::get('/statistics', [CertificateController::class, 'statistics']);
+        Route::post('/check', [CertificateController::class, 'check']);
+        Route::get('/product/{productId}', [CertificateController::class, 'getProductCertificates']);
+        Route::post('/', [CertificateController::class, 'store']);
+        Route::get('/{id}', [CertificateController::class, 'show']);
+        Route::put('/{id}', [CertificateController::class, 'update']);
+        Route::delete('/{id}', [CertificateController::class, 'destroy']);
+    });
 });
 Route::prefix('v1/front')->group(function () {
     Route::get('products', [ProductController::class, 'frontIndex']);
@@ -36,4 +47,12 @@ Route::prefix('v1/front')->group(function () {
     Route::get('product-base-types', [ProductController::class, 'frontProductType']);
     Route::get('products-parents', [ProductController::class, 'getParentProducts']);
     Route::get('products/{parentId}/children-list', [ProductController::class, 'getChildrenByParentId']);
+    Route::get('/certificates/user/{userId}', [CertificateController::class, 'getUserCertificates']);
+});
+Route::middleware(['auth:sanctum'])->prefix('v1/front')->group(function () {
+    Route::prefix('views')->group(function () {
+        Route::post('/', [ViewController::class, 'storeOrUpdate']);
+        Route::get('/product/{productId}/progress', [ViewController::class, 'getProductProgress']);
+    });
+    Route::get('/my-purchased-progress', [ViewController::class, 'getPurchasedProductsProgress']);
 });

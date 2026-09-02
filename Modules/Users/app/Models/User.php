@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use Modules\Wallet\Models\Wallet;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Cart\Models\Cart;
+use Modules\Products\Models\Certificate;
 use Modules\Products\Models\Product;
 
 // use Modules\Users\Database\Factories\UserFactory;
@@ -34,25 +35,29 @@ class User extends Authenticatable
         'birth_date' => 'date',
     ];
 
-   
+
     public function getDisplayName(): string
     {
         if (!empty($this->full_name)) {
             return $this->full_name;
         }
 
-       
+
         return 'کاربر';
     }
-    
+
     public function roles()
     {
         return $this->belongsToMany(Role::class);
     }
-   
+
     public function wallet()
     {
         return $this->hasOne(Wallet::class);
+    }
+    public function certificates()
+    {
+        return $this->hasMany(Certificate::class);
     }
     public function getPermissionsAttribute()
     {
