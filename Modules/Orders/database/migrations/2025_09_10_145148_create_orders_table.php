@@ -20,7 +20,6 @@ return new class extends Migration
             $table->string('payment_method')->nullable();
             $table->string('payment_status')->default('pending');
             $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
-            $table->bigInteger('price');
             $table->string('status')->default('pending'); // pending, processing, shipped, completed, canceled
             $table->timestamps();
         });

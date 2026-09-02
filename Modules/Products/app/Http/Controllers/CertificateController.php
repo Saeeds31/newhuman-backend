@@ -10,6 +10,7 @@ use Modules\Products\Models\Product;
 use Modules\Users\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Storage;
+use Modules\Orders\Models\Order;
 
 class CertificateController extends Controller
 {
@@ -138,6 +139,19 @@ class CertificateController extends Controller
             ], 422);
         }
 
+        // ✅ بررسی اینکه آیا کاربر این محصول رو خریداری کرده و پرداخت شده
+        $hasPurchased = Order::where('user_id', $request->user_id)
+            ->where('product_id', $request->product_id)
+            ->whereIn('payment_status', ['paid', 'completed'])
+            ->exists();
+
+        if (!$hasPurchased) {
+            return response()->json([
+                'success' => false,
+                'message' => 'این کاربر این محصول را خریداری نکرده یا پرداخت آن تکمیل نشده است'
+            ], 403); // 403 Forbidden
+        }
+
         // بررسی اینکه آیا قبلاً برای این کاربر و این محصول گواهینامه ثبت شده
         $existingCertificate = Certificate::where('user_id', $request->user_id)
             ->where('product_id', $request->product_id)
@@ -218,21 +232,13 @@ class CertificateController extends Controller
             $certificate = Certificate::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
-                'image' => 'nullable|file|max:255',
+                'image' => 'nullable|file|max:1024',
                 'file' => 'nullable|file|max:2048',
                 'number' => 'nullable|string|max:255|unique:certificates,number,' . $id,
                 'date_acquisition' => 'nullable|date',
                 'description' => 'nullable|string|max:1000',
             ]);
-            $data = [];
-            if ($request->hasFile('image')) {
-                $path = $request->file('image')->store('certificates', 'public');
-                $data['image'] = $path;
-            }
-            if ($request->hasFile('file')) {
-                $path = $request->file('file')->store('certificates', 'public');
-                $data['file'] = $path;
-            }
+
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
@@ -240,13 +246,66 @@ class CertificateController extends Controller
                 ], 422);
             }
 
-            // به‌روزرسانی فقط فیلدهای ارسال شده
+            // ✅ اگر user_id یا product_id تغییر کرده، بررسی کن
+            if ($request->has('user_id') || $request->has('product_id')) {
+                $userId = $request->user_id ?? $certificate->user_id;
+                $productId = $request->product_id ?? $certificate->product_id;
+
+                // بررسی خرید کاربر
+                $hasPurchased = Order::where('user_id', $userId)
+                    ->where('product_id', $productId)
+                    ->whereIn('payment_status', ['paid', 'completed'])
+                    ->exists();
+
+                if (!$hasPurchased) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'این کاربر این محصول را خریداری نکرده یا پرداخت آن تکمیل نشده است'
+                    ], 403);
+                }
+
+                // بررسی گواهینامه تکراری (به جز خودش)
+                $existingCertificate = Certificate::where('user_id', $userId)
+                    ->where('product_id', $productId)
+                    ->where('id', '!=', $id)
+                    ->first();
+
+                if ($existingCertificate) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'این کاربر قبلاً برای این محصول گواهینامه دریافت کرده است'
+                    ], 409);
+                }
+            }
+
+            $data = [];
+            if ($request->hasFile('image')) {
+                // حذف تصویر قبلی
+                if ($certificate->image) {
+                    Storage::disk('public')->delete($certificate->image);
+                }
+                $path = $request->file('image')->store('certificates', 'public');
+                $data['image'] = $path;
+            }
+
+            if ($request->hasFile('file')) {
+                // حذف فایل قبلی
+                if ($certificate->file) {
+                    Storage::disk('public')->delete($certificate->file);
+                }
+                $path = $request->file('file')->store('certificates', 'public');
+                $data['file'] = $path;
+            }
+
+            // به‌روزرسانی
             $certificate->update([
+                'user_id' => $request->user_id ?? $certificate->user_id,
+                'product_id' => $request->product_id ?? $certificate->product_id,
                 'image' => $data['image'] ?? $certificate->image,
                 'file' => $data['file'] ?? $certificate->file,
-                'number' => $request->number,
-                'date_acquisition' => $request->date_acquisition,
-                'description' => $request->description,
+                'number' => $request->number ?? $certificate->number,
+                'date_acquisition' => $request->date_acquisition ?? $certificate->date_acquisition,
+                'description' => $request->description ?? $certificate->description,
             ]);
 
             // بارگذاری مجدد با روابط
