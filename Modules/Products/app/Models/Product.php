@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Categories\Models\Category;
+use Modules\Faq\Models\Faq;
 
 class Product extends Model
 {
@@ -100,10 +101,23 @@ class Product extends Model
     {
         return $query->where('product_kind', 'child');
     }
+    public function faqs()
+    {
+        return $this->belongsToMany(Faq::class, 'faq_product')
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('faq_product.sort_order');
+    }
+
+    // فقط سوالات فعال
+    public function activeFaqs()
+    {
+        return $this->faqs()->where('faqs.is_active', true);
+    }
 
     // ========== روابط موجود ==========
 
-    public function productType(): BelongsTo
+    public function productType()
     {
         return $this->belongsTo(ProductType::class, 'product_type_id');
     }

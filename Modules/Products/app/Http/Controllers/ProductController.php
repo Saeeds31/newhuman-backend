@@ -26,6 +26,7 @@ class ProductController extends Controller
         $product = Product::with([
             'productType',
             'images',
+            'faqs',
             'categories',
             'attributeValues',
             'files'
@@ -218,7 +219,7 @@ class ProductController extends Controller
         $request->merge([
             'categories' => $categories,
             'attributes' => $attributes,
-            'product_files' => $productFiles
+            'product_files' => $productFiles,
         ]);
 
         $validated = $request->validate([
@@ -282,6 +283,12 @@ class ProductController extends Controller
             'product_files.*.path' => 'required|string|min:10',
             'product_files.*.is_free' => 'nullable|boolean',
             'product_files.*.sort_order' => 'nullable|integer|min:0',
+
+            // ========== سوالات متداول (ساخت از صفر) ==========
+            'faqs' => 'nullable|array',
+            'faqs.*.question' => 'required|string|max:500',
+            'faqs.*.answer' => 'required|string',
+            'faqs.*.sort_order' => 'nullable|integer|min:0',
         ]);
 
         // اعتبارسنجی شرطی برای فرزندان
@@ -372,6 +379,29 @@ class ProductController extends Controller
             // ویژگی‌ها
             $this->handleAttributes($validated['attributes'] ?? [], $product);
 
+            // ========== ساخت و انتساب سوالات متداول ==========
+            if (!empty($validated['faqs'])) {
+                $faqSyncData = [];
+
+                foreach ($validated['faqs'] as $index => $faqData) {
+                    // ساخت سوال جدید
+                    $faq = \Modules\Faq\Models\Faq::create([
+                        'question' => $faqData['question'],
+                        'answer' => $faqData['answer'],
+                        'is_active' => true,
+                        'sort_order' => $faqData['sort_order'] ?? $index,
+                    ]);
+
+                    // آماده‌سازی برای sync
+                    $faqSyncData[$faq->id] = [
+                        'sort_order' => $faqData['sort_order'] ?? $index,
+                    ];
+                }
+
+                // انتساب سوالات به محصول
+                $product->faqs()->sync($faqSyncData);
+            }
+
             DB::commit();
 
             return response()->json([
@@ -382,7 +412,8 @@ class ProductController extends Controller
                     'attributeValues',
                     'files',
                     'parent',
-                    'children'
+                    'children',
+                    'faqs',
                 ]),
                 'message' => 'محصول با موفقیت ایجاد شد'
             ], 201);
@@ -403,6 +434,7 @@ class ProductController extends Controller
         $product->load([
             'productType',
             'categories',
+            'faqs',
             'images' => function ($q) {
                 $q->orderBy('sort_order');
             },
@@ -433,6 +465,7 @@ class ProductController extends Controller
         $deletedFiles = $this->parseJsonInput($request->input('deleted_files', []));
         $updatedFiles = $this->parseJsonInput($request->input('updated_files', []));
         $newFiles = $this->parseJsonInput($request->input('new_files', []));
+        $faqs = $this->parseJsonInput($request->input('faqs', []));
 
         $request->merge([
             'categories' => $categories,
@@ -440,7 +473,8 @@ class ProductController extends Controller
             'deleted_images' => $deletedImages,
             'deleted_files' => $deletedFiles,
             'updated_files' => $updatedFiles,
-            'new_files' => $newFiles
+            'new_files' => $newFiles,
+            'faqs' => $faqs,
         ]);
 
         if ($request->has('delete_video')) {
@@ -512,6 +546,13 @@ class ProductController extends Controller
             'new_files.*.sort_order' => 'nullable|integer|min:0',
             'deleted_files' => 'nullable|array',
             'deleted_files.*' => 'exists:product_files,id',
+
+            // ========== سوالات متداول ==========
+            'faqs' => 'nullable|array',
+            'faqs.*.id' => 'nullable|integer|exists:faqs,id',
+            'faqs.*.question' => 'required|string|max:500',
+            'faqs.*.answer' => 'required|string',
+            'faqs.*.sort_order' => 'nullable|integer|min:0',
         ]);
 
         DB::beginTransaction();
@@ -590,6 +631,9 @@ class ProductController extends Controller
             // بروزرسانی ویژگی‌ها
             $this->handleAttributesUpdate($validated['attributes'] ?? [], $product);
 
+            // ========== مدیریت سوالات متداول ==========
+            $this->handleFaqsUpdate($product, $validated['faqs'] ?? []);
+
             DB::commit();
 
             return response()->json([
@@ -600,7 +644,8 @@ class ProductController extends Controller
                     'attributeValues',
                     'files',
                     'parent',
-                    'children'
+                    'children',
+                    'faqs',
                 ]),
                 'message' => 'محصول با موفقیت بروزرسانی شد'
             ]);
@@ -612,7 +657,54 @@ class ProductController extends Controller
             ], 500);
         }
     }
+    /**
+     * مدیریت سوالات متداول محصول
+     * - اگه faq.id داشته باشه → بروزرسانی
+     * - اگه faq.id نداشته باشه → ساخت جدید
+     * - سوالاتی که توی آرایه نیستن → از محصول detach می‌شن
+     *   (ولی از دیتابیس حذف نمی‌شن، چون ممکنه به محصول دیگه‌ای attach باشن)
+     */
+    protected function handleFaqsUpdate(Product $product, array $faqs)
+    {
+        $syncData = [];
 
+        foreach ($faqs as $index => $faqData) {
+            $faqId = $faqData['id'] ?? null;
+
+            if ($faqId) {
+                // بروزرسانی سوال موجود
+                $faq = \Modules\Faq\Models\Faq::find($faqId);
+                if ($faq) {
+                    $faq->update([
+                        'question' => $faqData['question'],
+                        'answer' => $faqData['answer'],
+                    ]);
+                } else {
+                    // اگه پیدا نشد، سوال جدید بساز
+                    $faq = \Modules\Faq\Models\Faq::create([
+                        'question' => $faqData['question'],
+                        'answer' => $faqData['answer'],
+                        'is_active' => true,
+                    ]);
+                }
+            } else {
+                // ساخت سوال جدید
+                $faq = \Modules\Faq\Models\Faq::create([
+                    'question' => $faqData['question'],
+                    'answer' => $faqData['answer'],
+                    'is_active' => true,
+                ]);
+            }
+
+            // آماده‌سازی برای sync
+            $syncData[$faq->id] = [
+                'sort_order' => $faqData['sort_order'] ?? $index,
+            ];
+        }
+
+        // sync خودش attach جدیدا و detach قدیمیا رو انجام می‌ده
+        $product->faqs()->sync($syncData);
+    }
     /**
      * حذف محصول
      */
@@ -937,7 +1029,7 @@ class ProductController extends Controller
      */
     public function getParentProducts(Request $request)
     {
-        $query = Product::with(['productType', 'categories', 'images'])
+        $query = Product::with(['productType','faqs', 'categories', 'images'])
             ->where('product_kind', 'parent')
             ->where('status', 'published');
 
@@ -987,6 +1079,7 @@ class ProductController extends Controller
         $children = Product::with([
             'productType',
             'images',
+            'faqs',
             'files',
             'attributeValues'
         ])

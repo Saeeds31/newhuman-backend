@@ -4,7 +4,6 @@ use Illuminate\Support\Facades\Route;
 use Modules\Products\Http\Controllers\CertificateController;
 use Modules\Products\Http\Controllers\ProductAttributeController;
 use Modules\Products\Http\Controllers\ProductController;
-use Modules\Products\Http\Controllers\ProductsController;
 use Modules\Products\Http\Controllers\ProductTypeController;
 use Modules\Products\Http\Controllers\ProductVariantController;
 use Modules\Products\Http\Controllers\ViewController;

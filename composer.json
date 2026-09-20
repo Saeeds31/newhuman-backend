@@ -46,6 +46,7 @@
             "Modules\\Categories\\": "Modules/Categories/app/",
             "Modules\\Articles\\": "Modules/Articles/app/",
             "Modules\\Front\\": "Modules/Front/app/",
+            "Modules\\Faq\\": "Modules/Faq/app/",
             "Modules\\ArticleCategories\\": "Modules/ArticleCategories/app/",
             "Modules\\Coupons\\": "Modules/Coupons/app/",
             "Modules\\Banners\\": "Modules/Banners/app/",

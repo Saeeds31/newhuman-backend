@@ -29,5 +29,6 @@
     "Notifications": true,
     "Story": true,
     "File": true,
-    "Discourse": true
+    "Discourse": true,
+    "Faq": true
 }

@@ -9,6 +9,7 @@ use Modules\Products\Models\Certificate;
 use Modules\Products\Models\Product;
 use Modules\Users\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Modules\Orders\Models\Order;
 
@@ -62,9 +63,9 @@ class CertificateController extends Controller
      */
     public function getUserCertificates(Request $request)
     {
+        $user = auth('sanctum')->user();
         try {
             // دریافت کاربر لاگین شده
-            $user = $request->user();
 
             if (!$user) {
                 return response()->json([
