@@ -19,6 +19,8 @@ class Discourse extends Model
         'discourse_with',
         'video',
         'main_image',
+        'subjects',
+        'guest_id',
         'short_description',
         'description',
         'discourse_category_id'
@@ -27,5 +29,9 @@ class Discourse extends Model
     public function category()
     {
         return $this->belongsTo(DiscourseCategory::class);
+    }
+    public function guest()
+    {
+        return $this->belongsTo(Guest::class);
     }
 }

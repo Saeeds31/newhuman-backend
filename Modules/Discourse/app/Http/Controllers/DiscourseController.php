@@ -14,7 +14,7 @@ class DiscourseController extends Controller
     public function index()
     {
         return response()->json(
-            Discourse::with('category')
+            Discourse::with(['category', 'guest'])
                 ->latest()
                 ->paginate(15)
         );
@@ -28,6 +28,8 @@ class DiscourseController extends Controller
             'discourse_with' => ['required', 'string'],
             'video' => ['required', 'string'],
             'main_image' => ['required', 'file', 'max:1024'],
+            'subjects' => ['nullable', 'string'],
+            'guest_id' => ['nullable', 'exists:guests,id'],
             'short_description' => ['required', 'string'],
             'description' => ['required', 'string'],
             'discourse_category_id' => [
@@ -41,13 +43,13 @@ class DiscourseController extends Controller
         }
         $discourse = Discourse::create($data);
 
-        return response()->json($discourse, 201);
+        return response()->json($discourse->load(['category', 'guest']), 201);
     }
 
     public function show(Discourse $discourse)
     {
         return response()->json(
-            $discourse->load('category')
+            $discourse->load(['category', 'guest'])
         );
     }
 
@@ -56,9 +58,11 @@ class DiscourseController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string'],
             'discourse_with' => ['required', 'string'],
-            'slug' => ['nullable', 'string', 'max:255', 'unique:discourses,slug'],
+            'slug' => ['nullable', 'string', 'max:255', 'unique:discourses,slug,' . $discourse->id],
             'video' => ['required', 'string'],
             'main_image' => ['nullable', 'file', 'max:1024'],
+            'subjects' => ['nullable', 'string'],
+            'guest_id' => ['nullable', 'exists:guests,id'],
             'short_description' => ['required', 'string'],
             'description' => ['required', 'string'],
             'discourse_category_id' => [
@@ -76,17 +80,23 @@ class DiscourseController extends Controller
         }
         $discourse->update($data);
 
-        return response()->json($discourse);
+        return response()->json($discourse->load(['category', 'guest']));
     }
 
     public function destroy(Discourse $discourse)
     {
+        // Delete main image if exists
+        if ($discourse->main_image) {
+            Storage::disk('public')->delete($discourse->main_image);
+        }
+
         $discourse->delete();
 
         return response()->json([
             'message' => 'Discourse deleted successfully.'
         ]);
     }
+
     public function getFrontDiscourseCategory()
     {
         return response()->json([
@@ -95,6 +105,7 @@ class DiscourseController extends Controller
                 ->get()
         ]);
     }
+
     public function getFrontDiscourses(?string $slug = null)
     {
         $category = $slug
@@ -107,7 +118,8 @@ class DiscourseController extends Controller
             ], 404);
         }
 
-        $discourses = Discourse::where('discourse_category_id', $category->id)
+        $discourses = Discourse::with('guest')
+            ->where('discourse_category_id', $category->id)
             ->latest()
             ->get();
 
@@ -116,18 +128,30 @@ class DiscourseController extends Controller
             'data' => $discourses,
         ]);
     }
+
     public function getFrontDetailDiscourse(?string $slug = null)
     {
-        $discourse = Discourse::where('slug', $slug)->first();
+        $discourse = Discourse::with(['category', 'guest'])
+            ->where('slug', $slug)
+            ->first();
 
         if (! $discourse) {
             return response()->json([
                 'message' => 'هیچ گفتومانی یافت نشد.'
             ], 404);
         }
-
+        $subjects = [];
+        if (!empty($discourse->subjects)) {
+            $subjects = array_values(array_filter(
+                array_map('trim', explode('#', $discourse->subjects)),
+                fn($item) => $item !== ''
+            ));
+        }
         return response()->json([
-            'discourse' => $discourse,
+            'discourse' => array_merge(
+                $discourse->toArray(),
+                ['subjects' => $subjects]
+            ),
         ]);
     }
 }
