@@ -45,6 +45,19 @@ class Product extends Model
         'end_date',
         'is_variation_active',
         'sort_order',
+        // 
+        'slug',
+        'video_title',
+        'video_summary',
+        'prerequisite_title',
+        'prerequisite_summary',
+        'prerequisites',
+        'suitable_for',
+        'changes_after_course_title',
+        'changes_after_course_summary',
+        'changes_after_course',
+        'course_files_summary',
+        'course_philosophy'
     ];
 
     protected $casts = [

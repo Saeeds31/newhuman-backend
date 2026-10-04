@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Modules\Discourse\Models\DiscourseCategory;
 use Illuminate\Support\Str;
+
 class DiscourseCategoryController extends Controller
 {
 
@@ -61,6 +62,14 @@ class DiscourseCategoryController extends Controller
 
         return response()->json([
             'message' => 'Category deleted successfully.'
+        ]);
+    }
+    public function getFrontDiscourseCategory()
+    {
+        return response()->json([
+            'data' => DiscourseCategory::select('id', 'title', 'slug')
+                ->orderBy('title')
+                ->get()
         ]);
     }
 }

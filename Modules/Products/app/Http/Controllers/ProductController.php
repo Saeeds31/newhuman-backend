@@ -81,6 +81,38 @@ class ProductController extends Controller
                 }
             }
         }
+        $prerequisites = [];
+        if (!empty($product->prerequisites)) {
+            $prerequisites = array_values(array_filter(
+                array_map('trim', explode('#', $product->prerequisites)),
+                fn($item) => $item !== ''
+            ));
+        }
+
+        $suitable_for = [];
+        if (!empty($product->suitable_for)) {
+            $suitable_for = array_values(array_filter(
+                array_map('trim', explode('#', $product->suitable_for)),
+                fn($item) => $item !== ''
+            ));
+        }
+
+        $changes_after_course = [];
+        if (!empty($product->changes_after_course)) {
+            $changes_after_course = array_values(array_filter(
+                array_map('trim', explode('#', $product->changes_after_course)),
+                fn($item) => $item !== ''
+            ));
+        }
+
+        $product = array_merge(
+            $product->toArray(),
+            [
+                'prerequisites' => $prerequisites,
+                'suitable_for' => $suitable_for,
+                'changes_after_course' => $suitable_for,
+            ]
+        );
 
         return response()->json(['data' => $product]);
     }
@@ -289,6 +321,19 @@ class ProductController extends Controller
             'faqs.*.question' => 'required|string|max:500',
             'faqs.*.answer' => 'required|string',
             'faqs.*.sort_order' => 'nullable|integer|min:0',
+            // داده های اضافی
+            'slug' => 'required|array',
+            'video_title' => 'nullable|array',
+            'video_summary' => 'nullable|array',
+            'prerequisite_title' => 'nullable|array',
+            'prerequisite_summary' => 'nullable|array',
+            'prerequisites' => 'nullable|array',
+            'suitable_for' => 'nullable|array',
+            'changes_after_course_title' => 'nullable|array',
+            'changes_after_course_summary' => 'nullable|array',
+            'changes_after_course' => 'nullable|array',
+            'course_files_summary' => 'nullable|array',
+            'course_philosophy' => 'nullable|array'
         ]);
 
         // اعتبارسنجی شرطی برای فرزندان
@@ -320,7 +365,6 @@ class ProductController extends Controller
             $product = Product::create([
                 'product_type_id' => $validated['product_type_id'],
                 'title' => $validated['title'],
-                'slug' => Str::slug($validated['title'] . '-' . uniqid()),
                 'description' => $validated['description'] ?? null,
                 'status' => $validated['status'],
                 'product_kind' => $validated['product_kind'],
@@ -355,6 +399,18 @@ class ProductController extends Controller
                 'child_coupon_code' => $validated['child_coupon_code'] ?? null,
                 'meta_title' => $validated['meta_title'] ?? null,
                 'meta_description' => $validated['meta_description'] ?? null,
+                'slug' => Str::slug($validated['slug'] . '-' . uniqid()),
+                'video_title' => $validated['video_title'] ?? null,
+                'video_summary' => $validated['video_summary'] ?? null,
+                'prerequisite_title' => $validated['prerequisite_title'] ?? null,
+                'prerequisite_summary' => $validated['prerequisite_summary'] ?? null,
+                'prerequisites' => $validated['prerequisites'] ?? null,
+                'suitable_for' => $validated['suitable_for'] ?? null,
+                'changes_after_course_title' => $validated['changes_after_course_title'] ?? null,
+                'changes_after_course_summary' => $validated['changes_after_course_summary'] ?? null,
+                'changes_after_course' => $validated['changes_after_course'] ?? null,
+                'course_files_summary' => $validated['course_files_summary'] ?? null,
+                'course_philosophy' => $validated['course_philosophy'] ?? null,
             ]);
 
             // اگر محصول فرزند است، وضعیت رو با والد همگام کن
@@ -553,6 +609,19 @@ class ProductController extends Controller
             'faqs.*.question' => 'required|string|max:500',
             'faqs.*.answer' => 'required|string',
             'faqs.*.sort_order' => 'nullable|integer|min:0',
+            // 
+            'slug' => 'required|array',
+            'video_title' => 'nullable|array',
+            'video_summary' => 'nullable|array',
+            'prerequisite_title' => 'nullable|array',
+            'prerequisite_summary' => 'nullable|array',
+            'prerequisites' => 'nullable|array',
+            'suitable_for' => 'nullable|array',
+            'changes_after_course_title' => 'nullable|array',
+            'changes_after_course_summary' => 'nullable|array',
+            'changes_after_course' => 'nullable|array',
+            'course_files_summary' => 'nullable|array',
+            'course_philosophy' => 'nullable|array'
         ]);
 
         DB::beginTransaction();
@@ -568,7 +637,7 @@ class ProductController extends Controller
             $product->update([
                 'product_type_id' => $validated['product_type_id'],
                 'title' => $validated['title'],
-                'slug' => Str::slug($validated['title'] . '-' . $product->id),
+                'slug' => Str::slug($validated['slug'] . '-' . $product->id),
                 'description' => $validated['description'] ?? null,
                 'status' => $validated['status'],
                 'product_kind' => $validated['product_kind'],
@@ -602,6 +671,17 @@ class ProductController extends Controller
                 'child_coupon_code' => $validated['child_coupon_code'] ?? null,
                 'meta_title' => $validated['meta_title'] ?? null,
                 'meta_description' => $validated['meta_description'] ?? null,
+                'video_title' => $validated['video_title'] ?? null,
+                'video_summary' => $validated['video_summary'] ?? null,
+                'prerequisite_title' => $validated['prerequisite_title'] ?? null,
+                'prerequisite_summary' => $validated['prerequisite_summary'] ?? null,
+                'prerequisites' => $validated['prerequisites'] ?? null,
+                'suitable_for' => $validated['suitable_for'] ?? null,
+                'changes_after_course_title' => $validated['changes_after_course_title'] ?? null,
+                'changes_after_course_summary' => $validated['changes_after_course_summary'] ?? null,
+                'changes_after_course' => $validated['changes_after_course'] ?? null,
+                'course_files_summary' => $validated['course_files_summary'] ?? null,
+                'course_philosophy' => $validated['course_philosophy'] ?? null,
             ]);
 
             // همگام‌سازی وضعیت فرزندان با والد
@@ -1029,7 +1109,7 @@ class ProductController extends Controller
      */
     public function getParentProducts(Request $request)
     {
-        $query = Product::with(['productType','faqs', 'categories', 'images'])
+        $query = Product::with(['productType', 'faqs', 'categories', 'images'])
             ->where('product_kind', 'parent')
             ->where('status', 'published');
 
