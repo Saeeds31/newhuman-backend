@@ -104,13 +104,21 @@ class ProductController extends Controller
                 fn($item) => $item !== ''
             ));
         }
-
+        $productFiles = $product->files;
+        $groupedFiles = $productFiles->groupBy('chapter_title')->map(function ($files, $chapterTitle) {
+            return [
+                'chapter_title' => $chapterTitle ?: 'بدون سرفصل',
+                'chapter_sort_order' => $files->first()->chapter_sort_order ?? 0,
+                'files' => $files->sortBy('sort_order')->values(),
+            ];
+        })->sortBy('chapter_sort_order')->values();
         $product = array_merge(
             $product->toArray(),
             [
                 'prerequisites' => $prerequisites,
                 'suitable_for' => $suitable_for,
                 'changes_after_course' => $suitable_for,
+                'grouped_files' => $groupedFiles,
             ]
         );
 
@@ -312,6 +320,8 @@ class ProductController extends Controller
             'product_files' => 'nullable|array',
             'product_files.*.title' => 'nullable|string|max:255',
             'product_files.*.description' => 'nullable|string',
+            'product_files.*.chapter_title' => 'nullable|string|max:255',
+            'product_files.*.chapter_sort_order' => 'nullable|integer|min:0',
             'product_files.*.path' => 'required|string|min:10',
             'product_files.*.is_free' => 'nullable|boolean',
             'product_files.*.sort_order' => 'nullable|integer|min:0',
@@ -595,6 +605,10 @@ class ProductController extends Controller
             'updated_files.*.path' => 'nullable|string|max:500',
             'updated_files.*.is_free' => 'nullable|boolean',
             'updated_files.*.sort_order' => 'nullable|integer|min:0',
+            'updated_files.*.chapter_title' => 'nullable|string|max:255',
+            'updated_files.*.chapter_sort_order' => 'nullable|integer|min:0',
+            'new_files.*.chapter_title' => 'nullable|string|max:255',
+            'new_files.*.chapter_sort_order' => 'nullable|integer|min:0',
             'new_files' => 'nullable|array',
             'new_files.*.title' => 'nullable|string|max:255',
             'new_files.*.path' => 'required|string|max:500',
@@ -992,6 +1006,8 @@ class ProductController extends Controller
                     'product_id' => $product->id,
                     'title' => $fileData['title'] ?? 'فایل بدون عنوان',
                     'description' => $fileData['description'] ?? null,
+                    'chapter_title'       => $fileData['chapter_title'] ?? null,
+                    'chapter_sort_order'  => $fileData['chapter_sort_order'] ?? 0,
                     'path' => $fileData['path'],
                     'original_name' => basename($fileData['path']),
                     'extension' => pathinfo($fileData['path'], PATHINFO_EXTENSION),
@@ -1033,6 +1049,8 @@ class ProductController extends Controller
                         'path' => $fileData['path'] ?? $existingFile->path,
                         'is_free' => $fileData['is_free'] ?? $existingFile->is_free,
                         'sort_order' => $fileData['sort_order'] ?? $existingFile->sort_order,
+                        'chapter_title'      => $fileData['chapter_title'] ?? $existingFile->chapter_title,
+                        'chapter_sort_order' => $fileData['chapter_sort_order'] ?? $existingFile->chapter_sort_order,
                     ]);
                 }
             }
@@ -1045,6 +1063,8 @@ class ProductController extends Controller
                     'product_id' => $product->id,
                     'title' => $fileData['title'] ?? 'فایل بدون عنوان',
                     'description' => $fileData['description'] ?? null,
+                    'chapter_title'       => $fileData['chapter_title'] ?? null,
+                    'chapter_sort_order'  => $fileData['chapter_sort_order'] ?? 0,
                     'path' => $fileData['path'],
                     'original_name' => basename($fileData['path']),
                     'extension' => pathinfo($fileData['path'], PATHINFO_EXTENSION),

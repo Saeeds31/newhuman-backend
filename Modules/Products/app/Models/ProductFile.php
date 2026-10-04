@@ -20,6 +20,8 @@ class ProductFile extends Model
         'size',
         'is_free',
         'sort_order',
+        'chapter_title',
+        'chapter_sort_order',
     ];
 
     protected $casts = [
