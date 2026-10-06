@@ -624,18 +624,18 @@ class ProductController extends Controller
             'faqs.*.answer' => 'required|string',
             'faqs.*.sort_order' => 'nullable|integer|min:0',
             // 
-            'slug' => 'required|array',
-            'video_title' => 'nullable|array',
-            'video_summary' => 'nullable|array',
-            'prerequisite_title' => 'nullable|array',
-            'prerequisite_summary' => 'nullable|array',
-            'prerequisites' => 'nullable|array',
-            'suitable_for' => 'nullable|array',
-            'changes_after_course_title' => 'nullable|array',
-            'changes_after_course_summary' => 'nullable|array',
-            'changes_after_course' => 'nullable|array',
-            'course_files_summary' => 'nullable|array',
-            'course_philosophy' => 'nullable|array'
+            'slug' => 'required|string',
+            'video_title' => 'nullable|string',
+            'video_summary' => 'nullable|string',
+            'prerequisite_title' => 'nullable|string',
+            'prerequisite_summary' => 'nullable|string',
+            'prerequisites' => 'nullable|string',
+            'suitable_for' => 'nullable|string',
+            'changes_after_course_title' => 'nullable|string',
+            'changes_after_course_summary' => 'nullable|string',
+            'changes_after_course' => 'nullable|string',
+            'course_files_summary' => 'nullable|string',
+            'course_philosophy' => 'nullable|string'
         ]);
 
         DB::beginTransaction();
