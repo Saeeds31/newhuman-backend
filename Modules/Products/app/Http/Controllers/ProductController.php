@@ -28,7 +28,7 @@ class ProductController extends Controller
             'images',
             'faqs',
             'categories',
-            'attributeValues',
+            'attributeValues.attribute',
             'files'
         ])->findOrFail($productId);
 
@@ -36,7 +36,7 @@ class ProductController extends Controller
         if ($product->isParent()) {
             $product->load([
                 'activeChildren' => function ($q) {
-                    $q->with(['images', 'files', 'attributeValues', 'productType'])
+                    $q->with(['images', 'files', 'attributeValues.attribute', 'productType'])
                         ->where('status', 'published');
                 }
             ]);
