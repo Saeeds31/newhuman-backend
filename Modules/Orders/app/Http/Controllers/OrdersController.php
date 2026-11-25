@@ -32,7 +32,7 @@ class OrdersController extends Controller
 
 
     /**
-     * لیست سفارش‌ها
+- لیست سفارش‌ها
      */
     public function index(Request $request)
     {
@@ -53,7 +53,7 @@ class OrdersController extends Controller
     }
 
     /**
-     * ایجاد سفارش جدید
+- ایجاد سفارش جدید
      */
     public function store(OrderStoreRequest $request, NotificationService $notifications)
     {
@@ -78,7 +78,7 @@ class OrdersController extends Controller
     }
 
     /**
-     * نمایش جزئیات سفارش
+- نمایش جزئیات سفارش
      */
     public function show(Order $order)
     {
@@ -92,7 +92,7 @@ class OrdersController extends Controller
     }
 
     /**
-     * بروزرسانی سفارش
+- بروزرسانی سفارش
      */
     public function update(OrderUpdateRequest $request, Order $order, NotificationService $notifications)
     {
@@ -231,7 +231,7 @@ class OrdersController extends Controller
             'product_id'   => 'required|exists:products,id',
             'payment_method'       => 'required|in:wallet,online,hybrid',
             'coupon_code'          => 'nullable|string',
-            'gateway' => 'required_if:payment_method,online,hybrid|nullable|in:zarinpal,payir,saman', // اضافه شد
+            'gateway' => 'required_if:payment_method,online,hybrid|nullable|in:zarinpal,payir,saman',
         ]);
         $product = Product::findOrFail($dataValidated['product_id']);
         $subtotal = $product->final_price;
@@ -293,7 +293,7 @@ class OrdersController extends Controller
             $order = Order::create([
                 'user_id'            => $user->id,
                 'subtotal'           => $subtotal,
-                'product_id'           => $product->id,
+                'product_id'         => $product->id,
                 'discount_amount'    => $discountAmount,
                 'total'              => $total,
                 'payment_method'     => $request->payment_method,
@@ -312,7 +312,7 @@ class OrdersController extends Controller
             }
 
             // پرداخت از کیف پول (هم برای رزرو و هم عادی)
-            if ($fromWallet > 0) {
+            if ($fromWallet > 0 && $user->wallet) {
                 $user->wallet->update(['balance' => $walletBalance - $fromWallet]);
                 $user->wallet->transactions()->create([
                     'type'        => 'debit',
@@ -331,14 +331,14 @@ class OrdersController extends Controller
                     'order_id' => $order->id,
                     'user_id'  => $user->id,
                     'amount'   => $toPayOnline,
-                    'gateway' => $gateway,
+                    'gateway'  => $gateway,
                     'status'   => 'pending',
                 ]);
                 // درخواست به درگاه پرداخت
                 $paymentService = new PaymentService();
                 $paymentResult = $paymentService->requestPayment($order, $gateway, [
                     'transaction_id' => $transaction->id,
-                    'callback_url' => route('gateway.callback.show', $transaction->id)
+                    'callback_url'   => route('gateway.callback.show', $transaction->id)
                 ]);
 
                 if (!$paymentResult['success']) {
@@ -346,7 +346,7 @@ class OrdersController extends Controller
                     DB::rollBack();
                     return response()->json([
                         'message' => 'خطا در اتصال به درگاه پرداخت',
-                        'error' => $paymentResult['message'] ?? 'Unknown error'
+                        'error'   => $paymentResult['message'] ?? 'Unknown error'
                     ], 500);
                 }
                 $notifications->create(
@@ -357,13 +357,13 @@ class OrdersController extends Controller
                 );
 
                 return response()->json([
-                    'order'        => $order->load('items'),
+                    'order'        => $order->load(['product']),
                     'payment_info' => [
                         'from_wallet'    => $fromWallet,
                         'to_pay_online'  => $toPayOnline,
                         'transaction_id' => $transaction->id,
-                        'gateway' => $gateway,
-                        'gateway_url' => $paymentResult['payment_url'], // لینک واقعی درگاه
+                        'gateway'        => $gateway,
+                        'gateway_url'    => $paymentResult['payment_url'],
                     ],
                 ], 201);
             }
@@ -377,11 +377,17 @@ class OrdersController extends Controller
                 "notification_order",
                 ['order' => $order->id]
             );
-            $smsService = new SmsService();
-            $smsService->sendToKavenegar('customer-order', $user->mobile, $order->id, ['token20' => $user->getDisplayName()]);
-            $smsService->sendToAdmins('customer-order-admin', $order->id);
+
+            try {
+                $smsService = new SmsService();
+                $smsService->sendToKavenegar('customer-order', $user->mobile, $order->id, ['token20' => $user->getDisplayName()]);
+                $smsService->sendToAdmins('customer-order-admin', $order->id);
+            } catch (\Throwable $e) {
+                // جلوگیری از لغو تراکنش در صورت اختلال موقت پنل پیامک
+            }
+
             return response()->json([
-                'order'   => $order->load('items'),
+                'order'   => $order->load(['product']),
                 'message' => $message,
             ], 201);
         });
