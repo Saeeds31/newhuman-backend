@@ -1,5 +1,4 @@
 <?php
-// Modules/Products/Models/Product.php
 
 namespace Modules\Products\Models;
 
@@ -18,7 +17,7 @@ class Product extends Model
     protected $fillable = [
         'product_type_id',
         'parent_id',
-        'product_kind', // simple, parent
+        'product_kind', // simple, parent, child
         'child_type', // online, in_person, recorded (فقط برای فرزندان)
         'title',
         'description',
@@ -35,6 +34,13 @@ class Product extends Model
         // فیلدهای جدید برای فرزندان
         'child_price',
         'child_discount_price',
+        'child_description',
+        'child_meta_title',
+        'child_meta_description',
+        'child_thumbnail',
+        'is_child_free',
+        'child_discount_value',
+        'child_discount_type',
         'meeting_link',
         'location',
         'max_attendees',
@@ -43,9 +49,13 @@ class Product extends Model
         'stock',
         'start_date',
         'end_date',
+        'registration_deadline',
         'is_variation_active',
+        'show_in_front',
         'sort_order',
-        // 
+        'display_order',
+        'child_coupon_code',
+        // فیلدهای تکمیلی و کتاب
         'slug',
         'video_title',
         'video_summary',
@@ -57,33 +67,37 @@ class Product extends Model
         'changes_after_course_summary',
         'changes_after_course',
         'course_files_summary',
-        'course_philosophy'
+        'course_philosophy',
+        'book_meta',
     ];
 
     protected $casts = [
         'is_free' => 'boolean',
+        'is_child_free' => 'boolean',
         'price' => 'integer',
         'final_price' => 'integer',
         'discount_value' => 'integer',
         'child_price' => 'integer',
         'child_discount_price' => 'integer',
+        'child_discount_value' => 'integer',
         'sold_count' => 'integer',
         'stock' => 'integer',
         'max_attendees' => 'integer',
         'is_variation_active' => 'boolean',
+        'show_in_front' => 'boolean',
         'start_date' => 'datetime',
         'end_date' => 'datetime',
+        'registration_deadline' => 'datetime',
+        'book_meta' => 'array',
     ];
 
     // ========== روابط ==========
 
-    // محصول والد
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'parent_id');
     }
 
-    // فرزندان محصول (فقط برای والد)
     public function children(): HasMany
     {
         return $this->hasMany(Product::class, 'parent_id')
@@ -91,29 +105,26 @@ class Product extends Model
             ->orderBy('sort_order');
     }
 
-    // فرزندان فعال
     public function activeChildren(): HasMany
     {
         return $this->children()->where('is_variation_active', true);
     }
 
-    // محصولات والد
     public function scopeParents($query)
     {
         return $query->where('product_kind', 'parent');
     }
 
-    // محصولات ساده
     public function scopeSimple($query)
     {
         return $query->where('product_kind', 'simple');
     }
 
-    // محصولات فرزند
     public function scopeChildren($query)
     {
         return $query->where('product_kind', 'child');
     }
+
     public function faqs()
     {
         return $this->belongsToMany(Faq::class, 'faq_product')
@@ -122,7 +133,6 @@ class Product extends Model
             ->orderBy('faq_product.sort_order');
     }
 
-    // فقط سوالات فعال
     public function activeFaqs()
     {
         return $this->faqs()->where('faqs.is_active', true);
@@ -189,13 +199,11 @@ class Product extends Model
         return $this->isFree() || $file->is_free;
     }
 
-    // دریافت قیمت برای فرزند
     public function getPriceForChild(): int
     {
         return $this->child_discount_price ?? $this->child_price ?? 0;
     }
 
-    // برچسب نوع فرزند
     public function getChildTypeLabelAttribute(): string
     {
         $labels = [
@@ -206,7 +214,6 @@ class Product extends Model
         return $labels[$this->child_type] ?? $this->child_type;
     }
 
-    // موجودی باقی‌مانده
     public function getAvailableStockAttribute(): ?int
     {
         if (!$this->isChild()) {
@@ -220,7 +227,6 @@ class Product extends Model
         return $this->stock;
     }
 
-    // وضعیت موجودی
     public function isOutOfStock(): bool
     {
         if (!$this->isChild()) {

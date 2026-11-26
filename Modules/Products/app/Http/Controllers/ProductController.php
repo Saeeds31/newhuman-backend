@@ -18,8 +18,7 @@ use Modules\Products\Models\View;
 class ProductController extends Controller
 {
     /**
-     * نمایش جزئیات محصول در فرانت
-     * اگر محصول والد باشد، فرزندانش را نمایش می‌دهد
+     * نمایش جزئیات محصول در فرانت (با پشتیبانی از id یا slug)
      */
     public function frontDetail($productId)
     {
@@ -30,9 +29,10 @@ class ProductController extends Controller
             'categories',
             'attributeValues.attribute',
             'files'
-        ])->findOrFail($productId);
+        ])->where(function ($q) use ($productId) {
+            $q->where('id', $productId)->orWhere('slug', $productId);
+        })->firstOrFail();
 
-        // اگر محصول والد است، فرزندان فعال را بارگذاری کن
         if ($product->isParent()) {
             $product->load([
                 'activeChildren' => function ($q) {
@@ -42,27 +42,21 @@ class ProductController extends Controller
             ]);
         }
 
-        // ========== اضافه کردن وضعیت مشاهده برای کاربر لاگین شده ==========
         if (auth()->check()) {
             $userId = auth()->id();
-
-            // دریافت همه View های کاربر برای فایل‌های این محصول
             $fileIds = $product->files->pluck('id')->toArray();
 
-            // اگر محصول والد است، ID فایل‌های فرزندان رو هم اضافه کن
             if ($product->isParent() && $product->activeChildren) {
                 foreach ($product->activeChildren as $child) {
                     $fileIds = array_merge($fileIds, $child->files->pluck('id')->toArray());
                 }
             }
 
-            // دریافت همه Views در یک کوئری
             $views = View::where('user_id', $userId)
                 ->whereIn('product_file_id', $fileIds)
                 ->get()
                 ->keyBy('product_file_id');
 
-            // تابع کمکی برای تنظیم وضعیت فایل‌ها
             $setFileStatus = function ($files) use ($views) {
                 foreach ($files as $file) {
                     $view = $views->get($file->id);
@@ -71,16 +65,15 @@ class ProductController extends Controller
                 return $files;
             };
 
-            // اعمال روی فایل‌های محصول اصلی
             $product->files = $setFileStatus($product->files);
 
-            // اعمال روی فایل‌های فرزندان
             if ($product->isParent() && $product->activeChildren) {
                 foreach ($product->activeChildren as $child) {
                     $child->files = $setFileStatus($child->files);
                 }
             }
         }
+
         $prerequisites = [];
         if (!empty($product->prerequisites)) {
             $prerequisites = array_values(array_filter(
@@ -104,6 +97,7 @@ class ProductController extends Controller
                 fn($item) => $item !== ''
             ));
         }
+
         $productFiles = $product->files;
         $groupedFiles = $productFiles->groupBy('chapter_title')->map(function ($files, $chapterTitle) {
             return [
@@ -112,12 +106,13 @@ class ProductController extends Controller
                 'files' => $files->sortBy('sort_order')->values(),
             ];
         })->sortBy('chapter_sort_order')->values();
+
         $product = array_merge(
             $product->toArray(),
             [
                 'prerequisites' => $prerequisites,
                 'suitable_for' => $suitable_for,
-                'changes_after_course' => $suitable_for,
+                'changes_after_course' => $changes_after_course,
                 'grouped_files' => $groupedFiles,
             ]
         );
@@ -127,8 +122,6 @@ class ProductController extends Controller
 
     /**
      * لیست محصولات برای فرانت
-     * فقط محصولات ساده و فرزندان را نمایش می‌دهد
-     * والدها را نمایش نمی‌دهد
      */
     public function frontIndex(Request $request)
     {
@@ -148,6 +141,13 @@ class ProductController extends Controller
             $query->where('product_type_id', $request->product_type_id);
         }
 
+        if ($request->filled('product_type_slug')) {
+            $slug = $request->product_type_slug;
+            $query->whereHas('productType', function ($q) use ($slug) {
+                $q->where('slug', $slug);
+            });
+        }
+
         if ($request->filled('category_ids')) {
             $categoryIds = explode(',', $request->category_ids);
             $query->whereHas('categories', function ($q) use ($categoryIds) {
@@ -155,17 +155,14 @@ class ProductController extends Controller
             });
         }
 
-        // فیلتر بر اساس نوع فرزند
         if ($request->filled('child_type')) {
             $query->where('child_type', $request->child_type);
         }
 
-        // فیلتر بر اساس parent_id (برای نمایش فرزندان یک والد خاص)
         if ($request->filled('parent_id')) {
             $query->where('parent_id', $request->parent_id);
         }
 
-        // فیلتر قیمت
         if ($request->filled('min_price')) {
             $query->where(function ($q) use ($request) {
                 $q->where('child_price', '>=', $request->min_price)
@@ -180,11 +177,10 @@ class ProductController extends Controller
             });
         }
 
-        // مرتب‌سازی
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'desc');
 
-        $allowedSorts = ['id', 'title', 'price', 'child_price', 'created_at', 'sold_count'];
+        $allowedSorts = ['id', 'title', 'price', 'child_price', 'created_at', 'sold_count', 'sort_order'];
         if (in_array($sortBy, $allowedSorts)) {
             $query->orderBy($sortBy, $sortOrder);
         } else {
@@ -198,7 +194,6 @@ class ProductController extends Controller
 
     /**
      * لیست محصولات برای پنل ادمین
-     * همه محصولات را نمایش می‌دهد
      */
     public function index(Request $request)
     {
@@ -210,6 +205,13 @@ class ProductController extends Controller
 
         if ($request->filled('product_type_id')) {
             $query->where('product_type_id', $request->product_type_id);
+        }
+
+        if ($request->filled('product_type_slug')) {
+            $slug = $request->product_type_slug;
+            $query->whereHas('productType', function ($q) use ($slug) {
+                $q->where('slug', $slug);
+            });
         }
 
         if ($request->filled('product_kind')) {
@@ -229,9 +231,6 @@ class ProductController extends Controller
         return response()->json(['data' => $products]);
     }
 
-    /**
-     * دریافت لیست فرزندان یک محصول والد
-     */
     public function getChildren(Product $product)
     {
         if (!$product->isParent()) {
@@ -255,15 +254,16 @@ class ProductController extends Controller
         $categories = $this->parseJsonInput($request->input('categories', []));
         $attributes = $this->parseJsonInput($request->input('attributes', []));
         $productFiles = $this->parseJsonInput($request->input('product_files', []));
+        $bookMeta = $this->parseJsonInput($request->input('book_meta', null));
 
         $request->merge([
             'categories' => $categories,
             'attributes' => $attributes,
             'product_files' => $productFiles,
+            'book_meta' => $bookMeta,
         ]);
 
         $validated = $request->validate([
-            // اطلاعات اصلی
             'product_type_id' => 'required|exists:product_types,id',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -274,17 +274,14 @@ class ProductController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
 
-            // قیمت برای محصولات ساده
             'price' => 'nullable|integer|min:0',
             'discount_value' => 'nullable|integer|min:0',
             'discount_type' => 'nullable|in:percent,fixed',
             'is_free' => 'boolean',
 
-            // قیمت برای فرزندان
             'child_price' => 'nullable|integer|min:0',
             'child_discount_price' => 'nullable|integer|min:0',
 
-            // فیلدهای اختصاصی فرزندان
             'child_description' => 'nullable|string',
             'child_meta_title' => 'nullable|string|max:255',
             'child_meta_description' => 'nullable|string|max:500',
@@ -306,17 +303,14 @@ class ProductController extends Controller
             'sku' => 'nullable|string|max:100|unique:products,sku',
             'child_coupon_code' => 'nullable|string|max:50',
 
-            // دسته‌بندی و ویژگی‌ها
             'categories' => 'nullable|array',
             'categories.*' => 'exists:categories,id',
             'attributes' => 'nullable|array',
 
-            // تصاویر و ویدیو
             'images' => 'nullable|array',
             'images.*' => 'file|image|max:5120',
             'video' => 'nullable|file|max:204800|mimes:mp4,avi,mkv,mov',
 
-            // فایل‌های محصول
             'product_files' => 'nullable|array',
             'product_files.*.title' => 'nullable|string|max:255',
             'product_files.*.description' => 'nullable|string',
@@ -326,12 +320,11 @@ class ProductController extends Controller
             'product_files.*.is_free' => 'nullable|boolean',
             'product_files.*.sort_order' => 'nullable|integer|min:0',
 
-            // ========== سوالات متداول (ساخت از صفر) ==========
             'faqs' => 'nullable|array',
             'faqs.*.question' => 'required|string|max:500',
             'faqs.*.answer' => 'required|string',
             'faqs.*.sort_order' => 'nullable|integer|min:0',
-            // داده های اضافی
+
             'slug' => 'required|string',
             'video_title' => 'nullable|string',
             'video_summary' => 'nullable|string',
@@ -343,10 +336,10 @@ class ProductController extends Controller
             'changes_after_course_summary' => 'nullable|string',
             'changes_after_course' => 'nullable|string',
             'course_files_summary' => 'nullable|string',
-            'course_philosophy' => 'nullable|string'
+            'course_philosophy' => 'nullable|string',
+            'book_meta' => 'nullable|array',
         ]);
 
-        // اعتبارسنجی شرطی برای فرزندان
         if ($validated['product_kind'] === 'child') {
             if (empty($validated['parent_id'])) {
                 return response()->json([
@@ -364,14 +357,12 @@ class ProductController extends Controller
         DB::beginTransaction();
 
         try {
-            // محاسبه قیمت نهایی برای محصول ساده
             $finalPrice = $this->calculateFinalPrice(
                 $validated['price'] ?? 0,
                 $validated['discount_value'] ?? null,
                 $validated['discount_type'] ?? null
             );
 
-            // ایجاد محصول
             $product = Product::create([
                 'product_type_id' => $validated['product_type_id'],
                 'title' => $validated['title'],
@@ -421,36 +412,27 @@ class ProductController extends Controller
                 'changes_after_course' => $validated['changes_after_course'] ?? null,
                 'course_files_summary' => $validated['course_files_summary'] ?? null,
                 'course_philosophy' => $validated['course_philosophy'] ?? null,
+                'book_meta' => $validated['book_meta'] ?? null,
             ]);
 
-            // اگر محصول فرزند است، وضعیت رو با والد همگام کن
             if ($product->isChild() && $product->parent) {
                 $product->update(['status' => $product->parent->status]);
             }
 
-            // مدیریت تصاویر
             $this->handleImages($request, $product);
-
-            // مدیریت ویدیو
             $this->handleVideo($request, $product);
-
-            // مدیریت فایل‌ها
             $this->handleFiles($validated['product_files'] ?? [], $product);
 
-            // دسته‌بندی‌ها
             if (!empty($validated['categories'])) {
                 $product->categories()->attach($validated['categories']);
             }
 
-            // ویژگی‌ها
             $this->handleAttributes($validated['attributes'] ?? [], $product);
 
-            // ========== ساخت و انتساب سوالات متداول ==========
             if (!empty($validated['faqs'])) {
                 $faqSyncData = [];
 
                 foreach ($validated['faqs'] as $index => $faqData) {
-                    // ساخت سوال جدید
                     $faq = \Modules\Faq\Models\Faq::create([
                         'question' => $faqData['question'],
                         'answer' => $faqData['answer'],
@@ -458,13 +440,11 @@ class ProductController extends Controller
                         'sort_order' => $faqData['sort_order'] ?? $index,
                     ]);
 
-                    // آماده‌سازی برای sync
                     $faqSyncData[$faq->id] = [
                         'sort_order' => $faqData['sort_order'] ?? $index,
                     ];
                 }
 
-                // انتساب سوالات به محصول
                 $product->faqs()->sync($faqSyncData);
             }
 
@@ -532,6 +512,9 @@ class ProductController extends Controller
         $updatedFiles = $this->parseJsonInput($request->input('updated_files', []));
         $newFiles = $this->parseJsonInput($request->input('new_files', []));
         $faqs = $this->parseJsonInput($request->input('faqs', []));
+        $bookMeta = $request->has('book_meta')
+            ? $this->parseJsonInput($request->input('book_meta', null))
+            : $product->book_meta;
 
         $request->merge([
             'categories' => $categories,
@@ -541,6 +524,7 @@ class ProductController extends Controller
             'updated_files' => $updatedFiles,
             'new_files' => $newFiles,
             'faqs' => $faqs,
+            'book_meta' => $bookMeta,
         ]);
 
         if ($request->has('delete_video')) {
@@ -558,17 +542,14 @@ class ProductController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
 
-            // قیمت
             'price' => 'nullable|integer|min:0',
             'discount_value' => 'nullable|integer|min:0',
             'discount_type' => 'nullable|in:percent,fixed',
             'is_free' => 'boolean',
 
-            // قیمت فرزندان
             'child_price' => 'nullable|integer|min:0',
             'child_discount_price' => 'nullable|integer|min:0',
 
-            // فیلدهای اختصاصی فرزندان
             'child_description' => 'nullable|string',
             'child_meta_title' => 'nullable|string|max:255',
             'child_meta_description' => 'nullable|string|max:500',
@@ -617,13 +598,12 @@ class ProductController extends Controller
             'deleted_files' => 'nullable|array',
             'deleted_files.*' => 'exists:product_files,id',
 
-            // ========== سوالات متداول ==========
             'faqs' => 'nullable|array',
             'faqs.*.id' => 'nullable|integer|exists:faqs,id',
             'faqs.*.question' => 'required|string|max:500',
             'faqs.*.answer' => 'required|string',
             'faqs.*.sort_order' => 'nullable|integer|min:0',
-            // 
+
             'slug' => 'required|string',
             'video_title' => 'nullable|string',
             'video_summary' => 'nullable|string',
@@ -635,13 +615,13 @@ class ProductController extends Controller
             'changes_after_course_summary' => 'nullable|string',
             'changes_after_course' => 'nullable|string',
             'course_files_summary' => 'nullable|string',
-            'course_philosophy' => 'nullable|string'
+            'course_philosophy' => 'nullable|string',
+            'book_meta' => 'nullable|array',
         ]);
 
         DB::beginTransaction();
 
         try {
-            // محاسبه قیمت نهایی
             $finalPrice = $this->calculateFinalPrice(
                 $validated['price'] ?? 0,
                 $validated['discount_value'] ?? null,
@@ -696,20 +676,16 @@ class ProductController extends Controller
                 'changes_after_course' => $validated['changes_after_course'] ?? null,
                 'course_files_summary' => $validated['course_files_summary'] ?? null,
                 'course_philosophy' => $validated['course_philosophy'] ?? null,
+                'book_meta' => $validated['book_meta'] ?? null,
             ]);
 
-            // همگام‌سازی وضعیت فرزندان با والد
             if ($product->isParent()) {
                 $product->children()->update(['status' => $product->status]);
             }
 
-            // مدیریت تصاویر
             $this->handleImages($request, $product, $validated['deleted_images'] ?? []);
-
-            // مدیریت ویدیو
             $this->handleVideo($request, $product, $validated['delete_video'] ?? false);
 
-            // مدیریت فایل‌ها
             $this->handleFilesUpdate(
                 $product,
                 $validated['updated_files'] ?? [],
@@ -717,15 +693,11 @@ class ProductController extends Controller
                 $validated['deleted_files'] ?? []
             );
 
-            // بروزرسانی دسته‌بندی‌ها
             if (isset($validated['categories'])) {
                 $product->categories()->sync($validated['categories']);
             }
 
-            // بروزرسانی ویژگی‌ها
             $this->handleAttributesUpdate($validated['attributes'] ?? [], $product);
-
-            // ========== مدیریت سوالات متداول ==========
             $this->handleFaqsUpdate($product, $validated['faqs'] ?? []);
 
             DB::commit();
@@ -751,13 +723,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
-    /**
-     * مدیریت سوالات متداول محصول
-     * - اگه faq.id داشته باشه → بروزرسانی
-     * - اگه faq.id نداشته باشه → ساخت جدید
-     * - سوالاتی که توی آرایه نیستن → از محصول detach می‌شن
-     *   (ولی از دیتابیس حذف نمی‌شن، چون ممکنه به محصول دیگه‌ای attach باشن)
-     */
+
     protected function handleFaqsUpdate(Product $product, array $faqs)
     {
         $syncData = [];
@@ -766,7 +732,6 @@ class ProductController extends Controller
             $faqId = $faqData['id'] ?? null;
 
             if ($faqId) {
-                // بروزرسانی سوال موجود
                 $faq = \Modules\Faq\Models\Faq::find($faqId);
                 if ($faq) {
                     $faq->update([
@@ -774,7 +739,6 @@ class ProductController extends Controller
                         'answer' => $faqData['answer'],
                     ]);
                 } else {
-                    // اگه پیدا نشد، سوال جدید بساز
                     $faq = \Modules\Faq\Models\Faq::create([
                         'question' => $faqData['question'],
                         'answer' => $faqData['answer'],
@@ -782,7 +746,6 @@ class ProductController extends Controller
                     ]);
                 }
             } else {
-                // ساخت سوال جدید
                 $faq = \Modules\Faq\Models\Faq::create([
                     'question' => $faqData['question'],
                     'answer' => $faqData['answer'],
@@ -790,24 +753,19 @@ class ProductController extends Controller
                 ]);
             }
 
-            // آماده‌سازی برای sync
             $syncData[$faq->id] = [
                 'sort_order' => $faqData['sort_order'] ?? $index,
             ];
         }
 
-        // sync خودش attach جدیدا و detach قدیمیا رو انجام می‌ده
         $product->faqs()->sync($syncData);
     }
-    /**
-     * حذف محصول
-     */
+
     public function destroy(Product $product)
     {
         DB::beginTransaction();
 
         try {
-            // اگر محصول والد است، فرزندانش را هم حذف کن
             if ($product->isParent()) {
                 foreach ($product->children as $child) {
                     foreach ($child->files as $file) {
@@ -823,17 +781,14 @@ class ProductController extends Controller
                 }
             }
 
-            // حذف فایل‌ها
             foreach ($product->files as $file) {
                 Storage::disk('public')->delete($file->path);
             }
 
-            // حذف تصاویر
             foreach ($product->images as $image) {
                 Storage::disk('public')->delete($image->path);
             }
 
-            // حذف ویدیو
             if ($product->video) {
                 Storage::disk('public')->delete($product->video);
             }
@@ -852,9 +807,6 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * تغییر وضعیت محصول
-     */
     public function toggleStatus(Product $product)
     {
         $statuses = ['draft', 'published', 'unpublished'];
@@ -863,7 +815,6 @@ class ProductController extends Controller
 
         $product->update(['status' => $statuses[$nextIndex]]);
 
-        // اگر محصول والد است، وضعیت فرزندان را هم تغییر بده
         if ($product->isParent()) {
             $product->children()->update(['status' => $statuses[$nextIndex]]);
         }
@@ -874,9 +825,6 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * دریافت ویژگی‌های یک نوع محصول
-     */
     public function getAttributes(ProductType $productType)
     {
         $attributes = ProductAttribute::where('product_type_id', $productType->id)
@@ -886,9 +834,6 @@ class ProductController extends Controller
         return response()->json(['data' => $attributes]);
     }
 
-    /**
-     * دریافت انواع محصولات (برای فرانت)
-     */
     public function frontProductType()
     {
         $types = ProductType::where('is_active', true)
@@ -900,9 +845,6 @@ class ProductController extends Controller
 
     // ========== متدهای کمکی ==========
 
-    /**
-     * پارس کردن ورودی JSON
-     */
     private function parseJsonInput($input)
     {
         if (is_string($input)) {
@@ -911,9 +853,6 @@ class ProductController extends Controller
         return $input ?? [];
     }
 
-    /**
-     * محاسبه قیمت نهایی
-     */
     private function calculateFinalPrice($price, $discountValue, $discountType)
     {
         $finalPrice = $price ?? 0;
@@ -928,12 +867,8 @@ class ProductController extends Controller
         return $finalPrice;
     }
 
-    /**
-     * مدیریت تصاویر
-     */
     private function handleImages($request, $product, $deletedImageIds = [])
     {
-        // حذف تصاویر
         if (!empty($deletedImageIds)) {
             $imagesToDelete = ProductImage::whereIn('id', $deletedImageIds)
                 ->where('product_id', $product->id)
@@ -945,7 +880,6 @@ class ProductController extends Controller
             }
         }
 
-        // آپلود تصاویر جدید
         if ($request->hasFile('images')) {
             $lastSortOrder = $product->images()->max('sort_order') ?? -1;
 
@@ -961,7 +895,6 @@ class ProductController extends Controller
             }
         }
 
-        // مدیریت main_image
         $remainingImages = $product->images()->orderBy('sort_order')->get();
 
         if ($remainingImages->count() > 0) {
@@ -974,9 +907,6 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * مدیریت ویدیو
-     */
     private function handleVideo($request, $product, $deleteVideo = false)
     {
         if ($deleteVideo) {
@@ -995,9 +925,6 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * مدیریت فایل‌ها (ذخیره)
-     */
     private function handleFiles($files, $product)
     {
         if (!empty($files)) {
@@ -1019,12 +946,8 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * مدیریت فایل‌ها (بروزرسانی)
-     */
     private function handleFilesUpdate($product, $updatedFiles, $newFiles, $deletedFileIds)
     {
-        // حذف فایل‌ها
         if (!empty($deletedFileIds)) {
             $filesToDelete = ProductFile::whereIn('id', $deletedFileIds)
                 ->where('product_id', $product->id)
@@ -1036,7 +959,6 @@ class ProductController extends Controller
             }
         }
 
-        // ویرایش فایل‌های موجود
         if (!empty($updatedFiles)) {
             foreach ($updatedFiles as $fileData) {
                 $existingFile = ProductFile::where('id', $fileData['id'])
@@ -1056,7 +978,6 @@ class ProductController extends Controller
             }
         }
 
-        // افزودن فایل‌های جدید
         if (!empty($newFiles)) {
             foreach ($newFiles as $fileData) {
                 ProductFile::create([
@@ -1076,9 +997,6 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * مدیریت ویژگی‌ها (ذخیره)
-     */
     private function handleAttributes($attributes, $product)
     {
         if (!empty($attributes)) {
@@ -1094,9 +1012,6 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * مدیریت ویژگی‌ها (بروزرسانی)
-     */
     private function handleAttributesUpdate($attributes, $product)
     {
         if (isset($attributes)) {
@@ -1124,26 +1039,21 @@ class ProductController extends Controller
             }
         }
     }
-    /**
-     * دریافت همه محصولات والد (محصولاتی که فرزند دارند)
-     */
+
     public function getParentProducts(Request $request)
     {
         $query = Product::with(['productType', 'faqs', 'categories', 'images'])
             ->where('product_kind', 'parent')
             ->where('status', 'published');
 
-        // فیلتر بر اساس جستجو
         if ($search = $request->get('search')) {
             $query->where('title', 'like', "%{$search}%");
         }
 
-        // فیلتر بر اساس نوع محصول
         if ($request->filled('product_type_id')) {
             $query->where('product_type_id', $request->product_type_id);
         }
 
-        // مرتب‌سازی
         $sortBy = $request->get('sort_by', 'id');
         $sortOrder = $request->get('sort_order', 'desc');
         $allowedSorts = ['id', 'title', 'created_at'];
@@ -1159,12 +1069,8 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * دریافت فرزندان یک محصول والد با آیدی
-     */
     public function getChildrenByParentId($parentId)
     {
-        // بررسی وجود محصول والد
         $parent = Product::where('id', $parentId)
             ->where('product_kind', 'parent')
             ->first();
@@ -1175,7 +1081,6 @@ class ProductController extends Controller
             ], 404);
         }
 
-        // دریافت فرزندان
         $children = Product::with([
             'productType',
             'images',
@@ -1189,18 +1094,10 @@ class ProductController extends Controller
             ->orderBy('id')
             ->get();
 
-        // اضافه کردن اطلاعات تکمیلی به هر فرزند
         $children->each(function ($child) {
-            // برچسب نوع
             $child->type_label = $child->child_type_label;
-
-            // قیمت نهایی فرزند
             $child->final_child_price = $child->getPriceForChild();
-
-            // موجودی باقی‌مانده
             $child->available_stock = $child->available_stock;
-
-            // وضعیت موجودی
             $child->stock_status = $child->isOutOfStock() ? 'اتمام موجودی' : 'موجود';
         });
 
