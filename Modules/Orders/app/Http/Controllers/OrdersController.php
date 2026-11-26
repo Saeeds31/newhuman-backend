@@ -267,12 +267,23 @@ class OrdersController extends Controller
         ]);
 
         $product = Product::with('productType')->findOrFail($dataValidated['product_id']);
-        $quantity = max(1, (int) ($dataValidated['quantity'] ?? 1));
+        $bookMeta = is_array($product->book_meta)
+            ? $product->book_meta
+            : (json_decode((string) ($product->book_meta ?? '{}'), true) ?: []);
 
-        // اگر محصول کتاب چاپی است، نشانی پستی الزامی است
-        if (($product->productType?->slug === 'printed-book') && empty(trim((string) ($dataValidated['shipping_address'] ?? '')))) {
+        $isBookProduct = $product->productType?->slug === 'printed-book';
+        $bookFormat = $bookMeta['format'] ?? 'printed'; // printed | pdf
+        $requiresShipping = $isBookProduct && $bookFormat !== 'pdf';
+
+        // اگر کتاب PDF دیجیتال است تعداد همیشه ۱ باشد
+        $quantity = ($isBookProduct && $bookFormat === 'pdf')
+            ? 1
+            : max(1, (int) ($dataValidated['quantity'] ?? 1));
+
+        // فقط برای کتاب‌های فیزیکی (غیر PDF) نشانی پستی الزامی است
+        if ($requiresShipping && empty(trim((string) ($dataValidated['shipping_address'] ?? '')))) {
             return response()->json([
-                'message' => 'برای سفارش کتاب چاپی، وارد کردن نشانی پستی الزامی است.',
+                'message' => 'برای سفارش نسخه چاپی کتاب، وارد کردن نشانی پستی الزامی است.',
             ], 422);
         }
 
@@ -326,6 +337,7 @@ class OrdersController extends Controller
             $toPayOnline,
             $request,
             $dataValidated,
+            $requiresShipping,
             $coupon,
             $finalStatus,
             $walletBalance
@@ -342,10 +354,10 @@ class OrdersController extends Controller
                 'status'           => $finalStatus,
                 'wallet_payment'   => $fromWallet,
                 'online_payment'   => $toPayOnline,
-                'receiver_name'    => $dataValidated['receiver_name'] ?? $user->full_name,
-                'receiver_mobile'  => $dataValidated['receiver_mobile'] ?? $user->mobile,
-                'postal_code'      => $dataValidated['postal_code'] ?? null,
-                'shipping_address' => $dataValidated['shipping_address'] ?? null,
+                'receiver_name'    => $requiresShipping ? ($dataValidated['receiver_name'] ?? $user->full_name) : null,
+                'receiver_mobile'  => $requiresShipping ? ($dataValidated['receiver_mobile'] ?? $user->mobile) : null,
+                'postal_code'      => $requiresShipping ? ($dataValidated['postal_code'] ?? null) : null,
+                'shipping_address' => $requiresShipping ? ($dataValidated['shipping_address'] ?? null) : null,
             ]);
 
             if ($coupon) {
