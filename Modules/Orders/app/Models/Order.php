@@ -11,17 +11,31 @@ use Modules\Products\Models\Product;
 class Order extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'user_id',
         'subtotal',
         'discount_amount',
         'total',
         'product_id',
+        'quantity',
         'payment_method',
         'payment_status',
         'status',
+        'wallet_payment',
+        'online_payment',
+        'coupon_id',
+        'receiver_name',
+        'receiver_mobile',
+        'postal_code',
+        'shipping_address',
     ];
-    // #status: pending,reserved, processing, shipped, completed, canceled , returned
+
+    protected $casts = [
+        'quantity' => 'integer',
+    ];
+
+    // #status: pending, reserved, processing, shipped, completed, canceled, returned
     // #payment methods:
     // 'online' → پرداخت آنلاین با درگاه بانکی
     // 'wallet' → پرداخت از کیف پول
@@ -40,6 +54,7 @@ class Order extends Model
             'shipped' => 'ارسال شده',
             'delivered' => 'تحویل داده شده',
             'cancelled' => 'لغو شده',
+            'canceled' => 'لغو شده',
             'completed' => 'کامل شده',
             'returned' => 'مرجوع شده',
             'failed' => 'ناموفق',
@@ -47,14 +62,17 @@ class Order extends Model
 
         return $statuses[$this->status] ?? $this->status;
     }
+
     public function user()
     {
         return $this->belongsTo(User::class);
     }
+
     public function product()
     {
         return $this->belongsTo(Product::class);
     }
+
     public static function dashboardReport()
     {
         return [
