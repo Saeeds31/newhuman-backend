@@ -35,16 +35,6 @@ class Order extends Model
         'quantity' => 'integer',
     ];
 
-    // #status: pending, reserved, processing, shipped, completed, canceled, returned
-    // #payment methods:
-    // 'online' → پرداخت آنلاین با درگاه بانکی
-    // 'wallet' → پرداخت از کیف پول
-    // 'cod' → پرداخت در محل (Cash on Delivery)
-    // #payment status:
-    // 'pending' → در انتظار پرداخت (default)
-    // 'paid' → پرداخت شده
-    // 'failed' → پرداخت ناموفق
-    // 'refunded' → برگشت داده شده
     public function getStatusLabelAttribute()
     {
         $statuses = [
@@ -71,6 +61,11 @@ class Order extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function items()
+    {
+        return $this->hasMany(OrderItem::class);
     }
 
     public static function dashboardReport()
