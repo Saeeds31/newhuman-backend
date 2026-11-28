@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Modules\Orders\Http\Controllers;
 
@@ -287,7 +287,10 @@ class OrdersController extends Controller
             ], 422);
         }
 
-        $subtotal = $product->final_price * $quantity;
+        $unitPrice = $product->isChild()
+            ? ($product->is_child_free ? 0 : (int) ($product->child_discount_price ?? $product->child_price ?? 0))
+            : ($product->is_free ? 0 : (int) ($product->final_price ?: ($product->sale_price ?? $product->price ?? 0)));
+        $subtotal = $unitPrice * $quantity;
         $discountAmount = 0;
         $coupon = null;
 
@@ -451,7 +454,10 @@ class OrdersController extends Controller
         $quantity = max(1, (int) $request->input('quantity', 1));
         $couponDiscount = 0;
         $coupon = null;
-        $subtotal = $product->final_price * $quantity;
+        $unitPrice = $product->isChild()
+            ? ($product->is_child_free ? 0 : (int) ($product->child_discount_price ?? $product->child_price ?? 0))
+            : ($product->is_free ? 0 : (int) ($product->final_price ?: ($product->sale_price ?? $product->price ?? 0)));
+        $subtotal = $unitPrice * $quantity;
 
         if ($request->filled('coupon_code')) {
             $couponResult = (new CouponService)->validateAndCalculate($request->coupon_code, $subtotal, $user->id);
