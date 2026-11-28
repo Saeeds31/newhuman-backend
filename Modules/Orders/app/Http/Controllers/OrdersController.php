@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace Modules\Orders\Http\Controllers;
 
@@ -434,7 +434,7 @@ class OrdersController extends Controller
 
             try {
                 $smsService = new SmsService();
-                $smsService->sendToKavenegar('customer-order', $user->mobile, $order->id, ['token20' => $user->getDisplayName()]);
+                $smsService->sendOrderConfirmationSms($order);
                 $smsService->sendToAdmins('customer-order-admin', $order->id);
             } catch (\Throwable $e) {
                 // جلوگیری از لغو تراکنش در صورت اختلال موقت پنل پیامک

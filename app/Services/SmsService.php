@@ -35,6 +35,42 @@ class SmsService
             'sender' => '1000066006700'
         ]);
     }
+    public function sendOrderConfirmationSms(\Modules\Orders\Models\Order $order): void
+    {
+        $order->loadMissing(['user', 'product.productType']);
+        $user = $order->user;
+        $product = $order->product;
+
+        if (!$user || empty($user->mobile)) {
+            return;
+        }
+
+        $bookMeta = is_array($product?->book_meta)
+            ? $product->book_meta
+            : (json_decode((string) ($product?->book_meta ?? '{}'), true) ?: []);
+
+        $isBook = $product?->productType?->slug === 'printed-book' || !empty($bookMeta);
+        $bookFormat = $bookMeta['format'] ?? 'printed';
+        $childType = strtolower((string) ($product?->child_type ?? ''));
+
+        if ($isBook && $bookFormat === 'pdf') {
+            $detailText = 'و فایل کتاب در بخش سفارش‌های پنل کاربری قابل دانلود است';
+        } elseif ($isBook) {
+            $detailText = 'و مرسوله پستی شما به‌زودی آماده و ارسال خواهد شد';
+        } elseif ($childType === 'in_person') {
+            $detailText = 'و جزئیات زمان و محل برگزاری در پنل کاربری شما درج شد';
+        } elseif ($childType === 'online') {
+            $detailText = 'و لینک و جزئیات ورود به جلسه در بخش آموزش‌های من فعال شد';
+        } else {
+            $detailText = 'و دسترسی دوره در بخش آموزش‌های من فعال شد';
+        }
+
+        $this->sendToKavenegar('customer-order', $user->mobile, (string) $order->id, [
+            'token20' => $user->getDisplayName(),
+            'token10' => $detailText,
+        ]);
+    }
+
     public function sendToKavenegar(string $template, string $mobile, string $token, array $extraData = [])
     {
         $apiKey = env("KAVENEGAR_API_KEY");
