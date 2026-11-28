@@ -65,7 +65,7 @@ class SmsService
             $detailText = 'و دسترسی دوره در بخش آموزش‌های من فعال شد';
         }
 
-        $this->sendToKavenegar('customer-order', $user->mobile, (string) $order->id, [
+        $this->sendToKavenegar('ehsan-customer-order', $user->mobile, (string) $order->id, [
             'token20' => $user->getDisplayName(),
             'token10' => $detailText,
         ]);
